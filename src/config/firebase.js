@@ -8,18 +8,22 @@ if (!admin.apps.length) {
   );
 
   if (!fs.existsSync(serviceAccountPath)) {
-    console.error(
-      '\n❌ firebase-service-account.json não encontrado em:', serviceAccountPath,
-      '\n   Gere a chave em: Firebase Console → Configurações → Contas de serviço\n'
-    );
-    process.exit(1);
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(
+        '\n⚠️  firebase-service-account.json não encontrado.',
+        '\n   Endpoints públicos funcionam normalmente.',
+        '\n   Endpoints protegidos retornarão 503 até a chave ser configurada.\n'
+      );
+    } else {
+      console.error('\n❌ firebase-service-account.json não encontrado. Abortando.\n');
+      process.exit(1);
+    }
+  } else {
+    admin.initializeApp({
+      credential: admin.credential.cert(require(serviceAccountPath)),
+    });
+    console.log('✅ Firebase Admin inicializado');
   }
-
-  admin.initializeApp({
-    credential: admin.credential.cert(require(serviceAccountPath)),
-  });
-
-  console.log('✅ Firebase Admin inicializado');
 }
 
 module.exports = admin;

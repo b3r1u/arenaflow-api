@@ -6,6 +6,13 @@ const prisma = require('../lib/prisma');
  * Injeta `req.user` (registro do banco) e `req.firebaseUid`.
  */
 async function authenticate(req, res, next) {
+  // Firebase não configurado (desenvolvimento sem chave)
+  if (!admin.apps.length) {
+    return res.status(503).json({
+      error: 'Autenticação indisponível — configure firebase-service-account.json',
+    });
+  }
+
   const header = req.headers.authorization;
 
   if (!header || !header.startsWith('Bearer ')) {
