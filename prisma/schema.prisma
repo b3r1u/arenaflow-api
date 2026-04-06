@@ -1,0 +1,105 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Usuário ──────────────────────────────────────────────────────────────────
+model User {
+  id            String         @id @default(uuid())
+  firebase_uid  String         @unique
+  email         String         @unique
+  name          String?
+  phone         String?
+  role          Role           @default(CLIENT)
+  establishment Establishment?
+  subscription  Subscription?
+  created_at    DateTime       @default(now())
+  updated_at    DateTime       @updatedAt
+}
+
+enum Role {
+  ADMIN
+  CLIENT
+}
+
+// ─── Planos ───────────────────────────────────────────────────────────────────
+model Plan {
+  id            String         @id @default(uuid())
+  slug          String         @unique   // free | essencial | pro | business
+  name          String
+  price         Float
+  max_courts    Int?                     // null = ilimitado
+  features      String[]
+  subscriptions Subscription[]
+}
+
+// ─── Assinatura ───────────────────────────────────────────────────────────────
+model Subscription {
+  id            String             @id @default(uuid())
+  user_id       String             @unique
+  user          User               @relation(fields: [user_id], references: [id])
+  plan_id       String
+  plan          Plan               @relation(fields: [plan_id], references: [id])
+  status        SubscriptionStatus @default(TRIAL)
+  trial_ends_at DateTime?
+  starts_at     DateTime           @default(now())
+  ends_at       DateTime?
+  created_at    DateTime           @default(now())
+  updated_at    DateTime           @updatedAt
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+// ─── Estabelecimento (= Arena no app cliente) ─────────────────────────────────
+model Establishment {
+  id            String   @id @default(uuid())
+  owner_id      String   @unique
+  owner         User     @relation(fields: [owner_id], references: [id])
+  name          String
+  city          String?
+  neighborhood  String?
+  address       String?
+  phone         String?
+  description   String?
+  sports        String[]
+  open_hours    String?
+  logo_color    String   @default("#22a55c")
+  logo_initials String?
+  rating        Float    @default(0)
+  reviews_count Int      @default(0)
+  price_from    Float?
+  price_to      Float?
+  active        Boolean  @default(true)
+  courts        Court[]
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+}
+
+// ─── Quadra ───────────────────────────────────────────────────────────────────
+model Court {
+  id               String        @id @default(uuid())
+  establishment_id String
+  establishment    Establishment @relation(fields: [establishment_id], references: [id])
+  name             String
+  sport_type       String        // futevôlei | vôlei | beach tennis | ambos
+  status           CourtStatus   @default(DISPONIVEL)
+  hourly_rate      Float
+  description      String?
+  active           Boolean       @default(true)
+  created_at       DateTime      @default(now())
+  updated_at       DateTime      @updatedAt
+}
+
+enum CourtStatus {
+  DISPONIVEL
+  BLOQUEADA
+}

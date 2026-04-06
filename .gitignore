@@ -1,0 +1,15 @@
+node_modules
+
+# Variáveis de ambiente
+.env
+.env.local
+
+# Chave privada do Firebase — NUNCA commitar
+firebase-service-account.json
+
+# Prisma client gerado
+/generated/
+
+# Logs
+*.log
+npm-debug.log*
