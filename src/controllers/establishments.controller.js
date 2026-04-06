@@ -12,6 +12,7 @@ const EstablishmentSchema = z.object({
   open_hours:    z.string().optional(),
   logo_color:    z.string().optional(),
   logo_initials: z.string().max(3).optional(),
+  logo_url:      z.string().nullable().optional(),
 });
 
 /**
@@ -78,6 +79,7 @@ async function create(req, res) {
         open_hours:    data.open_hours,
         logo_color:    data.logo_color || '#22a55c',
         logo_initials: initials,
+        logo_url:      data.logo_url ?? null,
       },
     });
 

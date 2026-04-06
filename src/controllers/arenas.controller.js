@@ -89,6 +89,7 @@ function mapToArena(est) {
     open_hours:    est.open_hours     || '',
     logo_color:    est.logo_color,
     logo_initials: est.logo_initials  || '',
+    logo_url:      est.logo_url       || null,
     rating:        est.rating,
     reviews_count: est.reviews_count,
     price_from:    est.price_from     || 0,

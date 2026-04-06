@@ -73,6 +73,7 @@ model Establishment {
   open_hours    String?
   logo_color    String   @default("#22a55c")
   logo_initials String?
+  logo_url      String?
   rating        Float    @default(0)
   reviews_count Int      @default(0)
   price_from    Float?
