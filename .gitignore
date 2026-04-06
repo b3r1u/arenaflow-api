@@ -7,7 +7,7 @@ node_modules
 # Chave privada do Firebase — NUNCA commitar
 firebase-service-account.json
 
-# Prisma client gerado
+# Prisma client gerado (apenas se usar output customizado)
 /generated/
 
 # Logs

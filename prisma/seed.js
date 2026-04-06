@@ -1,7 +1,11 @@
 require('dotenv').config();
-const { PrismaClient } = require('../generated/prisma');
+const { Pool }         = require('pg');
+const { PrismaPg }     = require('@prisma/adapter-pg');
+const { PrismaClient } = require('@prisma/client');
 
-const prisma = new PrismaClient();
+const pool    = new Pool({ connectionString: process.env.DATABASE_URL });
+const adapter = new PrismaPg(pool);
+const prisma  = new PrismaClient({ adapter });
 
 async function main() {
   console.log('🌱 Iniciando seed dos planos...');
@@ -32,7 +36,7 @@ async function main() {
       slug:       'business',
       name:       'Business',
       price:      269,
-      max_courts: null, // ilimitado
+      max_courts: null,
       features:   ['Quadras ilimitadas', 'Relatórios avançados', 'Mensalistas', 'Suporte dedicado', '+R$39/quadra extra'],
     },
   ];
