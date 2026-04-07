@@ -4,6 +4,7 @@
   "description": "ArenaFlow REST API — Node.js + Express + PostgreSQL + Prisma",
   "main": "server.js",
   "scripts": {
+    "build": "prisma generate",
     "dev": "nodemon server.js",
     "start": "node server.js",
     "db:migrate": "prisma migrate dev",
