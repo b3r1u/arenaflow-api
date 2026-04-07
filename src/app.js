@@ -13,7 +13,7 @@ app.use(cors({
   origin: (origin, callback) => {
     // Permite requests sem origin (ex: Postman, curl)
     if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-    callback(new Error(`Origin ${origin} não permitida pelo CORS`));
+    callback(null, false);
   },
   credentials: true,
 }));
