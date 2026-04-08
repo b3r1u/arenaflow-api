@@ -80,8 +80,52 @@ model Establishment {
   price_to      Float?
   active        Boolean  @default(true)
   courts        Court[]
+  financial     FinancialInfo?
   created_at    DateTime @default(now())
   updated_at    DateTime @updatedAt
+}
+
+// ─── Informações Financeiras ──────────────────────────────────────────────────
+model FinancialInfo {
+  id                   String          @id @default(uuid())
+  establishment_id     String          @unique
+  establishment        Establishment   @relation(fields: [establishment_id], references: [id], onDelete: Cascade)
+
+  account_holder       String                        // Nome do titular
+  document_type        DocumentType                  // CPF ou CNPJ
+  document_encrypted   String                        // Documento criptografado AES-256-GCM (LGPD)
+
+  pix_key_type         PixKeyType                    // Tipo da chave PIX
+  pix_key_encrypted    String                        // Chave PIX criptografada (LGPD)
+
+  asaas_account_id     String?                       // ID subconta ASAAS (após integração)
+  status               FinancialStatus @default(PENDING_REVIEW)
+
+  // LGPD — Rastreabilidade do consentimento
+  lgpd_consent_at      DateTime                      // Timestamp do aceite
+  lgpd_purpose         String          @default("Processamento de pagamentos para reservas de quadras esportivas")
+
+  created_at           DateTime        @default(now())
+  updated_at           DateTime        @updatedAt
+}
+
+enum DocumentType {
+  CPF
+  CNPJ
+}
+
+enum PixKeyType {
+  CPF
+  CNPJ
+  EMAIL
+  PHONE
+  RANDOM
+}
+
+enum FinancialStatus {
+  PENDING_REVIEW  // Dados enviados, aguardando análise
+  ACTIVE          // Verificado — pode receber pagamentos
+  SUSPENDED       // Conta suspensa
 }
 
 // ─── Quadra ───────────────────────────────────────────────────────────────────
