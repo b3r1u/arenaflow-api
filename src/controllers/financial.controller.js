@@ -1,5 +1,6 @@
 const prisma                          = require('../lib/prisma');
 const { encrypt, decrypt, maskDocument, maskPixKey } = require('../lib/crypto');
+const { createSubAccount }            = require('../lib/asaas.service');
 
 function sanitize(raw) {
   const { document_encrypted, pix_key_encrypted, ...safe } = raw;
@@ -30,8 +31,8 @@ async function getFinancial(req, res, next) {
       include: { financial: true },
     });
 
-    if (!est)             return res.status(404).json({ error: 'Estabelecimento não encontrado' });
-    if (!est.financial)   return res.json({ financial: null });
+    if (!est)           return res.status(404).json({ error: 'Estabelecimento não encontrado' });
+    if (!est.financial) return res.json({ financial: null });
 
     res.json({ financial: toPublic(est.financial) });
   } catch (err) { next(err); }
@@ -41,7 +42,8 @@ async function getFinancial(req, res, next) {
 async function saveFinancial(req, res, next) {
   try {
     const { account_holder, document_type, document_value,
-            pix_key_type, pix_key_value, lgpd_consent } = req.body;
+            pix_key_type, pix_key_value, lgpd_consent,
+            email, phone } = req.body;
 
     if (!lgpd_consent) {
       return res.status(400).json({ error: 'Consentimento LGPD é obrigatório' });
@@ -49,25 +51,53 @@ async function saveFinancial(req, res, next) {
     if (!account_holder || !document_type || !document_value || !pix_key_type || !pix_key_value) {
       return res.status(400).json({ error: 'Todos os campos financeiros são obrigatórios' });
     }
+    if (!email) {
+      return res.status(400).json({ error: 'E-mail é obrigatório para criação da subconta de pagamentos' });
+    }
 
     const est = await prisma.establishment.findUnique({ where: { owner_id: req.user.id } });
     if (!est) return res.status(404).json({ error: 'Estabelecimento não encontrado' });
 
+    const rawDoc = document_value.replace(/\D/g, '');
+
     const payload = {
       account_holder,
       document_type,
-      document_encrypted: encrypt(document_value.replace(/\D/g, '')),
+      document_encrypted: encrypt(rawDoc),
       pix_key_type,
       pix_key_encrypted:  encrypt(pix_key_value),
       status:             'PENDING_REVIEW',
       lgpd_consent_at:    new Date(),
     };
 
-    const financial = await prisma.financialInfo.upsert({
+    // Upsert — salva os dados antes de chamar ASAAS para não perder em caso de falha da API
+    let financial = await prisma.financialInfo.upsert({
       where:  { establishment_id: est.id },
       update: payload,
       create: { establishment_id: est.id, ...payload },
     });
+
+    // Cria subconta ASAAS apenas se ainda não tiver uma
+    if (!financial.asaas_account_id) {
+      try {
+        const companyType = document_type === 'CNPJ' ? 'MEI' : undefined;
+        const walletId = await createSubAccount({
+          name:        account_holder,
+          email:       email || req.user.email,
+          cpfCnpj:     rawDoc,
+          mobilePhone: phone,
+          companyType,
+        });
+
+        financial = await prisma.financialInfo.update({
+          where: { id: financial.id },
+          data:  { asaas_account_id: walletId },
+        });
+      } catch (asaasErr) {
+        // Não falha o cadastro — registra o erro e retorna com status PENDING_REVIEW
+        console.error('[ASAAS] Falha ao criar subconta:', asaasErr.message);
+      }
+    }
 
     res.json({ financial: toPublic(financial) });
   } catch (err) { next(err); }
