@@ -38,20 +38,21 @@ function request(method, path, body, overrideApiKey) {
       let raw = '';
       res.on('data', chunk => raw += chunk);
       res.on('end', () => {
-        console.log(`[ASAAS] ${method} ${path} → ${res.statusCode} | body: ${raw.slice(0, 300) || '(vazio)'}`);
+        const preview = raw.slice(0, 400) || '(vazio)';
+        console.log(`[ASAAS] ${method} ${path} → ${res.statusCode} | ${preview}`);
         if (!raw.trim()) {
-          if (res.statusCode >= 400) return reject(new Error(`ASAAS error ${res.statusCode}`));
+          if (res.statusCode >= 400) return reject(new Error(`[${res.statusCode}] resposta vazia`));
           return resolve({});
         }
         try {
           const json = JSON.parse(raw);
           if (res.statusCode >= 400) {
             const msg = json?.errors?.[0]?.description || json?.message || `ASAAS error ${res.statusCode}`;
-            return reject(new Error(msg));
+            return reject(new Error(`[${res.statusCode}] ${msg}`));
           }
           resolve(json);
         } catch {
-          reject(new Error(`ASAAS resposta inválida (${res.statusCode}): ${raw.slice(0, 200)}`));
+          reject(new Error(`[${res.statusCode}] JSON inválido: ${raw.slice(0, 300)}`));
         }
       });
     });
@@ -144,12 +145,23 @@ async function createSubAccount({
 
 /**
  * Cadastra conta bancária na subconta ASAAS.
- * Usa a apiKey da subconta (não da conta mãe).
+ * Se já existir (POST retorna 404 ou GET traz dados), trata como sucesso.
  */
 async function createBankAccount(subApiKey, {
   bankCode, accountType, ownerName, cpfCnpj,
   agency, agencyDigit, account, accountDigit,
 }) {
+  // Verifica se já existe conta bancária cadastrada
+  try {
+    const existing = await request('GET', '/bankAccount', null, subApiKey);
+    if (existing && (existing.id || (existing.data && existing.data.length > 0))) {
+      console.log('[ASAAS] Conta bancária já cadastrada, pulando criação.');
+      return existing;
+    }
+  } catch (e) {
+    // GET falhou, tenta criar normalmente
+  }
+
   const payload = {
     bank:            { code: bankCode },
     accountName:     'Conta principal',
@@ -162,7 +174,16 @@ async function createBankAccount(subApiKey, {
     bankAccountType: accountType,
   };
 
-  return request('POST', '/bankAccount', payload, subApiKey);
+  try {
+    return await request('POST', '/bankAccount', payload, subApiKey);
+  } catch (err) {
+    // 404 no POST = conta já existe mas GET não retornou — trata como sucesso
+    if (err.message.startsWith('[404]')) {
+      console.log('[ASAAS] POST /bankAccount retornou 404 — conta provavelmente já registrada.');
+      return {};
+    }
+    throw err;
+  }
 }
 
 /**
