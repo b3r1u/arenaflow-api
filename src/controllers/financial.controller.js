@@ -162,6 +162,7 @@ async function getDocumentLinks(req, res, next) {
         id:            g.id,
         type:          g.type,
         title:         g.title,
+        description:   g.description || null,
         status:        g.status,
         onboardingUrl: g.onboardingUrl || null,
       }));
