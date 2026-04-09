@@ -98,7 +98,8 @@ model FinancialInfo {
   pix_key_type         PixKeyType                    // Tipo da chave PIX
   pix_key_encrypted    String                        // Chave PIX criptografada (LGPD)
 
-  asaas_account_id     String?                       // ID subconta ASAAS (após integração)
+  asaas_account_id          String?                  // walletId da subconta ASAAS
+  asaas_api_key_encrypted   String?                  // API Key da subconta (AES-256-GCM) — nunca exposta
   status               FinancialStatus @default(PENDING_REVIEW)
 
   // LGPD — Rastreabilidade do consentimento

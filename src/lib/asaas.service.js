@@ -56,20 +56,36 @@ function request(method, path, body) {
 
 /**
  * Cria uma subconta ASAAS para o dono da arena.
- * Retorna o walletId que será armazenado em FinancialInfo.asaas_account_id.
+ * Retorna { walletId, apiKey } — a apiKey só é retornada neste momento,
+ * nunca pode ser recuperada depois, então deve ser armazenada criptografada.
  */
-async function createSubAccount({ name, email, cpfCnpj, mobilePhone, companyType }) {
+async function createSubAccount({
+  name, email, cpfCnpj, birthDate,
+  mobilePhone, phone,
+  companyType,
+  address, addressNumber, complement, province, postalCode,
+}) {
   const payload = {
     name,
     email,
-    cpfCnpj: cpfCnpj.replace(/\D/g, ''),
-    mobilePhone: mobilePhone ? mobilePhone.replace(/\D/g, '') : undefined,
-    ...(companyType ? { companyType } : {}),
+    cpfCnpj:  cpfCnpj.replace(/\D/g, ''),
+    ...(birthDate    ? { birthDate }    : {}),
+    ...(companyType  ? { companyType }  : {}),
+    ...(mobilePhone  ? { mobilePhone: mobilePhone.replace(/\D/g, '') } : {}),
+    ...(phone        ? { phone: phone.replace(/\D/g, '') }             : {}),
+    ...(address      ? { address }      : {}),
+    ...(addressNumber? { addressNumber } : {}),
+    ...(complement   ? { complement }   : {}),
+    ...(province     ? { province }     : {}),
+    ...(postalCode   ? { postalCode: postalCode.replace(/\D/g, '') } : {}),
   };
 
   const result = await request('POST', '/accounts', payload);
-  // ASAAS retorna walletId na subconta criada
-  return result.walletId || result.id;
+
+  return {
+    walletId: result.walletId || result.id,
+    apiKey:   result.apiKey,           // presente apenas na resposta de criação
+  };
 }
 
 module.exports = { createSubAccount };

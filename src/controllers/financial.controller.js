@@ -1,11 +1,6 @@
-const prisma                          = require('../lib/prisma');
+const prisma                                         = require('../lib/prisma');
 const { encrypt, decrypt, maskDocument, maskPixKey } = require('../lib/crypto');
-const { createSubAccount }            = require('../lib/asaas.service');
-
-function sanitize(raw) {
-  const { document_encrypted, pix_key_encrypted, ...safe } = raw;
-  return safe;
-}
+const { createSubAccount }                           = require('../lib/asaas.service');
 
 function toPublic(f) {
   return {
@@ -41,9 +36,13 @@ async function getFinancial(req, res, next) {
 // POST /api/financial/me
 async function saveFinancial(req, res, next) {
   try {
-    const { account_holder, document_type, document_value,
-            pix_key_type, pix_key_value, lgpd_consent,
-            email, phone } = req.body;
+    const {
+      account_holder, document_type, document_value,
+      pix_key_type, pix_key_value, lgpd_consent,
+      email, phone,
+      birth_date, company_type,
+      address, address_number, complement, province, postal_code,
+    } = req.body;
 
     if (!lgpd_consent) {
       return res.status(400).json({ error: 'Consentimento LGPD é obrigatório' });
@@ -70,31 +69,40 @@ async function saveFinancial(req, res, next) {
       lgpd_consent_at:    new Date(),
     };
 
-    // Upsert — salva os dados antes de chamar ASAAS para não perder em caso de falha da API
+    // Upsert — persiste antes de chamar ASAAS
     let financial = await prisma.financialInfo.upsert({
       where:  { establishment_id: est.id },
       update: payload,
       create: { establishment_id: est.id, ...payload },
     });
 
-    // Cria subconta ASAAS apenas se ainda não tiver uma
+    // Cria subconta ASAAS somente se ainda não tiver uma
     if (!financial.asaas_account_id) {
       try {
-        const companyType = document_type === 'CNPJ' ? 'MEI' : undefined;
-        const walletId = await createSubAccount({
-          name:        account_holder,
-          email:       email || req.user.email,
-          cpfCnpj:     rawDoc,
-          mobilePhone: phone,
-          companyType,
+        const { walletId, apiKey } = await createSubAccount({
+          name:          account_holder,
+          email,
+          cpfCnpj:       rawDoc,
+          birthDate:     birth_date,
+          mobilePhone:   phone,
+          companyType:   company_type || (document_type === 'CNPJ' ? 'MEI' : undefined),
+          address,
+          addressNumber: address_number,
+          complement,
+          province,
+          postalCode:    postal_code,
         });
 
         financial = await prisma.financialInfo.update({
           where: { id: financial.id },
-          data:  { asaas_account_id: walletId },
+          data:  {
+            asaas_account_id:        walletId,
+            // apiKey só existe no momento da criação — armazenada criptografada
+            ...(apiKey ? { asaas_api_key_encrypted: encrypt(apiKey) } : {}),
+          },
         });
       } catch (asaasErr) {
-        // Não falha o cadastro — registra o erro e retorna com status PENDING_REVIEW
+        // Não falha o cadastro — registra erro e retorna com PENDING_REVIEW
         console.error('[ASAAS] Falha ao criar subconta:', asaasErr.message);
       }
     }
