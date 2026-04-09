@@ -27,6 +27,7 @@ function request(method, path, body) {
       headers: {
         'access_token': apiKey,
         'Content-Type': 'application/json',
+        'User-Agent':   'ArenaFlow/1.0',
         ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {}),
       },
     };
@@ -62,13 +63,14 @@ function request(method, path, body) {
 async function createSubAccount({
   name, email, cpfCnpj, birthDate,
   mobilePhone, phone,
-  companyType,
+  companyType, incomeValue,
   address, addressNumber, complement, province, postalCode,
 }) {
   const payload = {
     name,
     email,
-    cpfCnpj:  cpfCnpj.replace(/\D/g, ''),
+    cpfCnpj:     cpfCnpj.replace(/\D/g, ''),
+    incomeValue: incomeValue || 3000,          // renda/faturamento mensal (obrigatório)
     ...(birthDate    ? { birthDate }    : {}),
     ...(companyType  ? { companyType }  : {}),
     ...(mobilePhone  ? { mobilePhone: mobilePhone.replace(/\D/g, '') } : {}),
