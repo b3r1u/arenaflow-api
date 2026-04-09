@@ -77,6 +77,7 @@ async function saveFinancial(req, res, next) {
     });
 
     // Cria subconta ASAAS somente se ainda não tiver uma
+    let asaas_warning = null;
     if (!financial.asaas_account_id) {
       try {
         const { walletId, apiKey } = await createSubAccount({
@@ -97,17 +98,16 @@ async function saveFinancial(req, res, next) {
           where: { id: financial.id },
           data:  {
             asaas_account_id:        walletId,
-            // apiKey só existe no momento da criação — armazenada criptografada
             ...(apiKey ? { asaas_api_key_encrypted: encrypt(apiKey) } : {}),
           },
         });
       } catch (asaasErr) {
-        // Não falha o cadastro — registra erro e retorna com PENDING_REVIEW
         console.error('[ASAAS] Falha ao criar subconta:', asaasErr.message);
+        asaas_warning = asaasErr.message;
       }
     }
 
-    res.json({ financial: toPublic(financial) });
+    res.json({ financial: toPublic(financial), asaas_warning });
   } catch (err) { next(err); }
 }
 
