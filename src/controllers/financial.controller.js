@@ -1,6 +1,6 @@
 const prisma                                         = require('../lib/prisma');
 const { encrypt, decrypt, maskDocument, maskPixKey } = require('../lib/crypto');
-const { createSubAccount, createBankAccount, uploadDocument } = require('../lib/asaas.service');
+const { createSubAccount, createBankAccount, getDocumentGroups, uploadDocumentById } = require('../lib/asaas.service');
 
 function toPublic(f) {
   return {
@@ -108,7 +108,7 @@ async function saveBankAccount(req, res, next) {
       where:   { owner_id: req.user.id },
       include: { financial: true },
     });
-    if (!est?.financial)         return res.status(404).json({ error: 'Dados financeiros não encontrados' });
+    if (!est?.financial)              return res.status(404).json({ error: 'Dados financeiros não encontrados' });
     if (!est.financial.asaas_account_id) return res.status(400).json({ error: 'Subconta ASAAS ainda não criada' });
 
     const subApiKey = getSubApiKey(est.financial);
@@ -139,30 +139,65 @@ async function saveBankAccount(req, res, next) {
   }
 }
 
-// POST /api/financial/document  (multipart)
-async function saveDocument(req, res, next) {
+// GET /api/financial/document-links
+// Retorna os grupos de documentos pendentes com onboardingUrl (White Label)
+async function getDocumentLinks(req, res, next) {
   try {
-    const { doc_type, doc_side } = req.body;
-    const file = req.file;
-
-    if (!doc_type || !file) return res.status(400).json({ error: 'Tipo de documento e arquivo são obrigatórios' });
-
     const est = await prisma.establishment.findUnique({
       where:   { owner_id: req.user.id },
       include: { financial: true },
     });
-    if (!est?.financial)         return res.status(404).json({ error: 'Dados financeiros não encontrados' });
+    if (!est?.financial)              return res.status(404).json({ error: 'Dados financeiros não encontrados' });
     if (!est.financial.asaas_account_id) return res.status(400).json({ error: 'Subconta ASAAS ainda não criada' });
 
     const subApiKey = getSubApiKey(est.financial);
     if (!subApiKey) return res.status(400).json({ error: 'Chave da subconta não disponível' });
 
-    await uploadDocument(subApiKey, {
+    const groups = await getDocumentGroups(subApiKey);
+
+    // Filtra apenas pendentes/rejeitados e normaliza os campos relevantes
+    const links = groups
+      .filter(g => g.status !== 'APPROVED')
+      .map(g => ({
+        id:            g.id,
+        type:          g.type,
+        title:         g.title,
+        status:        g.status,
+        onboardingUrl: g.onboardingUrl || null,
+      }));
+
+    res.json({ links });
+  } catch (err) {
+    if (err.message) return res.status(400).json({ error: err.message });
+    next(err);
+  }
+}
+
+// POST /api/financial/document/:groupId  (multipart — apenas para grupos sem onboardingUrl)
+async function saveDocument(req, res, next) {
+  try {
+    const { groupId } = req.params;
+    const file = req.file;
+
+    if (!groupId || !file) return res.status(400).json({ error: 'ID do grupo e arquivo são obrigatórios' });
+
+    const est = await prisma.establishment.findUnique({
+      where:   { owner_id: req.user.id },
+      include: { financial: true },
+    });
+    if (!est?.financial)              return res.status(404).json({ error: 'Dados financeiros não encontrados' });
+    if (!est.financial.asaas_account_id) return res.status(400).json({ error: 'Subconta ASAAS ainda não criada' });
+
+    const subApiKey = getSubApiKey(est.financial);
+    if (!subApiKey) return res.status(400).json({ error: 'Chave da subconta não disponível' });
+
+    const { doc_type } = req.body;
+
+    await uploadDocumentById(subApiKey, groupId, {
       fileBuffer: file.buffer,
       filename:   file.originalname,
       mimeType:   file.mimetype,
       type:       doc_type,
-      side:       doc_side || null,
     });
 
     const updated = await prisma.financialInfo.update({
@@ -177,4 +212,4 @@ async function saveDocument(req, res, next) {
   }
 }
 
-module.exports = { getFinancial, saveFinancial, saveBankAccount, saveDocument };
+module.exports = { getFinancial, saveFinancial, saveBankAccount, getDocumentLinks, saveDocument };

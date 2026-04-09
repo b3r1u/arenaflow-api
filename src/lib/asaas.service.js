@@ -38,6 +38,7 @@ function request(method, path, body, overrideApiKey) {
       let raw = '';
       res.on('data', chunk => raw += chunk);
       res.on('end', () => {
+        console.log(`[ASAAS] ${method} ${path} → ${res.statusCode} | body: ${raw.slice(0, 300) || '(vazio)'}`);
         if (!raw.trim()) {
           if (res.statusCode >= 400) return reject(new Error(`ASAAS error ${res.statusCode}`));
           return resolve({});
@@ -84,6 +85,7 @@ function requestMultipart(path, formData, overrideApiKey) {
       let raw = '';
       res.on('data', chunk => raw += chunk);
       res.on('end', () => {
+        console.log(`[ASAAS] POST ${path} (multipart) → ${res.statusCode} | body: ${raw.slice(0, 300) || '(vazio)'}`);
         if (!raw.trim()) {
           if (res.statusCode >= 400) return reject(new Error(`ASAAS error ${res.statusCode}`));
           return resolve({});
@@ -157,24 +159,32 @@ async function createBankAccount(subApiKey, {
     agencyDigit:     agencyDigit || '',
     account,
     accountDigit,
-    bankAccountType: accountType, // CONTA_CORRENTE | CONTA_POUPANCA
+    bankAccountType: accountType,
   };
 
   return request('POST', '/bankAccount', payload, subApiKey);
 }
 
 /**
- * Faz upload de documento de identidade na subconta ASAAS.
- * type: IDENTIFICATION | DRIVER_LICENSE | PASSPORT
- * side: FRONT | BACK
+ * Busca os grupos de documentos pendentes da subconta.
+ * Retorna array com id, type, title, status, onboardingUrl (quando presente).
+ * Conforme docs ASAAS: GET /v3/myAccount/documents
  */
-async function uploadDocument(subApiKey, { fileBuffer, filename, mimeType, type, side }) {
-  const form = new FormData();
-  form.append('type', type);
-  if (side) form.append('documentSide', side);
-  form.append('documentFile', fileBuffer, { filename, contentType: mimeType });
-
-  return requestMultipart('/myAccount/documents', form, subApiKey);
+async function getDocumentGroups(subApiKey) {
+  const result = await request('GET', '/myAccount/documents', null, subApiKey);
+  return result.data || [];
 }
 
-module.exports = { createSubAccount, createBankAccount, uploadDocument };
+/**
+ * Faz upload de documento via API (apenas para grupos SEM onboardingUrl).
+ * Endpoint: POST /v3/myAccount/documents/{id}
+ */
+async function uploadDocumentById(subApiKey, groupId, { fileBuffer, filename, mimeType, type }) {
+  const form = new FormData();
+  form.append('type', type);
+  form.append('documentFile', fileBuffer, { filename, contentType: mimeType });
+
+  return requestMultipart(`/myAccount/documents/${groupId}`, form, subApiKey);
+}
+
+module.exports = { createSubAccount, createBankAccount, getDocumentGroups, uploadDocumentById };
