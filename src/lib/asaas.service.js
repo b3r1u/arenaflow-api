@@ -38,6 +38,10 @@ function request(method, path, body, overrideApiKey) {
       let raw = '';
       res.on('data', chunk => raw += chunk);
       res.on('end', () => {
+        if (!raw.trim()) {
+          if (res.statusCode >= 400) return reject(new Error(`ASAAS error ${res.statusCode}`));
+          return resolve({});
+        }
         try {
           const json = JSON.parse(raw);
           if (res.statusCode >= 400) {
@@ -46,7 +50,7 @@ function request(method, path, body, overrideApiKey) {
           }
           resolve(json);
         } catch {
-          reject(new Error(`ASAAS resposta inválida: ${raw}`));
+          reject(new Error(`ASAAS resposta inválida (${res.statusCode}): ${raw.slice(0, 200)}`));
         }
       });
     });
@@ -80,6 +84,10 @@ function requestMultipart(path, formData, overrideApiKey) {
       let raw = '';
       res.on('data', chunk => raw += chunk);
       res.on('end', () => {
+        if (!raw.trim()) {
+          if (res.statusCode >= 400) return reject(new Error(`ASAAS error ${res.statusCode}`));
+          return resolve({});
+        }
         try {
           const json = JSON.parse(raw);
           if (res.statusCode >= 400) {
@@ -88,7 +96,7 @@ function requestMultipart(path, formData, overrideApiKey) {
           }
           resolve(json);
         } catch {
-          reject(new Error(`ASAAS resposta inválida: ${raw}`));
+          reject(new Error(`ASAAS resposta inválida (${res.statusCode}): ${raw.slice(0, 200)}`));
         }
       });
     });
