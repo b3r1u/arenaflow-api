@@ -71,6 +71,7 @@ async function createSubAccount({
     email,
     cpfCnpj:     cpfCnpj.replace(/\D/g, ''),
     incomeValue: incomeValue || 3000,          // renda/faturamento mensal (obrigatório)
+    whiteLabel:  true,                         // evita que o ASAAS envie emails/SMS ao subconta
     ...(birthDate    ? { birthDate }    : {}),
     ...(companyType  ? { companyType }  : {}),
     ...(mobilePhone  ? { mobilePhone: mobilePhone.replace(/\D/g, '') } : {}),
