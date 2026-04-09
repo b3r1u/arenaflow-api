@@ -100,6 +100,8 @@ model FinancialInfo {
 
   asaas_account_id          String?                  // walletId da subconta ASAAS
   asaas_api_key_encrypted   String?                  // API Key da subconta (AES-256-GCM) — nunca exposta
+  bank_registered_at        DateTime?                // data em que conta bancária foi cadastrada no ASAAS
+  docs_uploaded_count       Int       @default(0)   // quantos documentos foram enviados ao ASAAS
   status               FinancialStatus @default(PENDING_REVIEW)
 
   // LGPD — Rastreabilidade do consentimento
