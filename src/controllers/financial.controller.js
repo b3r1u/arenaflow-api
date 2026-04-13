@@ -65,6 +65,16 @@ async function saveFinancial(req, res, next) {
       pix_key_encrypted:  encrypt(pix_key_value),
       status:             'PENDING_REVIEW',
       lgpd_consent_at:    new Date(),
+      // Campos de formulário (para pré-preenchimento)
+      email:          email || null,
+      phone:          phone || null,
+      birth_date:     birth_date || null,
+      company_type:   company_type || null,
+      address:        address || null,
+      address_number: address_number || null,
+      complement:     complement || null,
+      province:       province || null,
+      postal_code:    postal_code || null,
     };
 
     let financial = await prisma.financialInfo.upsert({
@@ -129,7 +139,15 @@ async function saveBankAccount(req, res, next) {
 
     const updated = await prisma.financialInfo.update({
       where: { id: est.financial.id },
-      data:  { bank_registered_at: new Date() },
+      data:  {
+        bank_registered_at: new Date(),
+        bank_code:          bank_code,
+        bank_account_type:  account_type,
+        bank_agency:        agency,
+        bank_agency_digit:  agency_digit || null,
+        bank_account:       account,
+        bank_account_digit: account_digit,
+      },
     });
 
     res.json({ financial: toPublic(updated) });
@@ -213,4 +231,42 @@ async function saveDocument(req, res, next) {
   }
 }
 
-module.exports = { getFinancial, saveFinancial, saveBankAccount, getDocumentLinks, saveDocument };
+// GET /api/financial/me/form — retorna dados decriptados para pré-preencher o formulário
+async function getFinancialForm(req, res, next) {
+  try {
+    const est = await prisma.establishment.findUnique({
+      where:   { owner_id: req.user.id },
+      include: { financial: true },
+    });
+    if (!est)           return res.status(404).json({ error: 'Estabelecimento não encontrado' });
+    if (!est.financial) return res.json({ form: null });
+
+    const f = est.financial;
+    res.json({
+      form: {
+        account_holder: f.account_holder,
+        document_type:  f.document_type,
+        document_value: decrypt(f.document_encrypted),
+        pix_key_type:   f.pix_key_type,
+        pix_key_value:  decrypt(f.pix_key_encrypted),
+        email:          f.email || '',
+        phone:          f.phone || '',
+        birth_date:     f.birth_date || '',
+        company_type:   f.company_type || 'MEI',
+        address:        f.address || '',
+        address_number: f.address_number || '',
+        complement:     f.complement || '',
+        province:       f.province || '',
+        postal_code:    f.postal_code || '',
+        bank_code:         f.bank_code || '',
+        bank_account_type: f.bank_account_type || 'CONTA_CORRENTE',
+        bank_agency:       f.bank_agency || '',
+        bank_agency_digit: f.bank_agency_digit || '',
+        bank_account:      f.bank_account || '',
+        bank_account_digit: f.bank_account_digit || '',
+      }
+    });
+  } catch (err) { next(err); }
+}
+
+module.exports = { getFinancial, saveFinancial, saveBankAccount, getDocumentLinks, saveDocument, getFinancialForm };

@@ -21,8 +21,10 @@ function encrypt(text) {
 }
 
 function decrypt(stored) {
+  if (!stored) return '';
   const key = getKey();
   const [ivHex, tagHex, enc] = stored.split(':');
+  if (!ivHex || !tagHex || !enc) return '';
   const decipher = crypto.createDecipheriv(ALGORITHM, key, Buffer.from(ivHex, 'hex'));
   decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
   let dec = decipher.update(enc, 'hex', 'utf8');

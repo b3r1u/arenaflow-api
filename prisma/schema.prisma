@@ -98,6 +98,27 @@ model FinancialInfo {
   pix_key_type         PixKeyType                    // Tipo da chave PIX
   pix_key_encrypted    String                        // Chave PIX criptografada (LGPD)
 
+  // Dados de contato e pessoais (para pré-preenchimento do formulário)
+  email                String?
+  phone                String?
+  birth_date           String?                       // Data de nascimento (CPF) — formato YYYY-MM-DD
+  company_type         String?                       // Tipo de empresa (CNPJ): MEI, LIMITED, etc.
+
+  // Endereço
+  address              String?
+  address_number       String?
+  complement           String?
+  province             String?
+  postal_code          String?
+
+  // Dados bancários (para pré-preenchimento)
+  bank_code            String?
+  bank_account_type    String?
+  bank_agency          String?
+  bank_agency_digit    String?
+  bank_account         String?
+  bank_account_digit   String?
+
   asaas_account_id          String?                  // walletId da subconta ASAAS
   asaas_api_key_encrypted   String?                  // API Key da subconta (AES-256-GCM) — nunca exposta
   bank_registered_at        DateTime?                // data em que conta bancária foi cadastrada no ASAAS

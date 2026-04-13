@@ -48,7 +48,7 @@ function request(method, path, body, overrideApiKey) {
           const json = JSON.parse(raw);
           if (res.statusCode >= 400) {
             const msg = json?.errors?.[0]?.description || json?.message || `ASAAS error ${res.statusCode}`;
-            return reject(new Error(`[${res.statusCode}] ${msg}`));
+            return reject(new Error(msg));
           }
           resolve(json);
         } catch {
