@@ -111,6 +111,10 @@ model FinancialInfo {
   province             String?
   postal_code          String?
 
+  // Endereço complementar (obrigatório para Pagar.me)
+  city                 String?
+  state                String?                       // UF (ex: PE, SP)
+
   // Dados bancários (para pré-preenchimento)
   bank_code            String?
   bank_account_type    String?
@@ -119,10 +123,8 @@ model FinancialInfo {
   bank_account         String?
   bank_account_digit   String?
 
-  asaas_account_id          String?                  // walletId da subconta ASAAS
-  asaas_api_key_encrypted   String?                  // API Key da subconta (AES-256-GCM) — nunca exposta
-  bank_registered_at        DateTime?                // data em que conta bancária foi cadastrada no ASAAS
-  docs_uploaded_count       Int       @default(0)   // quantos documentos foram enviados ao ASAAS
+  pagarme_recipient_id      String?                  // ID do recebedor no Pagar.me (rp_XXXXXXXXXXXXXXXX)
+  bank_registered_at        DateTime?                // data em que o recebedor foi criado no Pagar.me
   status               FinancialStatus @default(PENDING_REVIEW)
 
   // LGPD — Rastreabilidade do consentimento
