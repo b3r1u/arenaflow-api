@@ -112,13 +112,14 @@ async function createRecipient({
 
   // Endereço (usado em PF e PJ)
   const addressObj = address ? {
-    street:        address,
-    street_number: addressNumber || 'S/N',
-    complementary: complement   || '',
-    neighborhood:  neighborhood || '',
-    city:          city         || '',
-    state:         state        || '',
-    zip_code:      (postalCode  || '').replace(/\D/g, ''),
+    street:          address,
+    street_number:   addressNumber || 'S/N',
+    complementary:   complement    || '',
+    neighborhood:    neighborhood  || '',
+    city:            city          || '',
+    state:           state         || '',
+    zip_code:        (postalCode   || '').replace(/\D/g, ''),
+    reference_point: complement    || 'Não informado',
   } : undefined;
 
   const registerInformation = isIndividual
@@ -148,10 +149,6 @@ async function createRecipient({
 
   const payload = {
     code: `arenaflow_${rawDoc}`,
-    name,
-    email,
-    document: rawDoc,
-    type:     recipientType,
     default_bank_account: {
       holder_name:         name,
       holder_type:         isIndividual ? 'individual' : 'company',
