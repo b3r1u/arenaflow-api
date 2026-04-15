@@ -42,7 +42,11 @@ function request(method, path, body) {
         try {
           const json = JSON.parse(raw);
           if (res.statusCode >= 400) {
-            const msg = json?.message || json?.errors?.[0]?.message || `Pagar.me error ${res.statusCode}`;
+            console.error('[PAGARME] Erro detalhado:', JSON.stringify(json, null, 2));
+            const errors = Array.isArray(json?.errors)
+              ? json.errors.map(e => e.message || JSON.stringify(e)).join(' | ')
+              : null;
+            const msg = errors || json?.message || `Pagar.me error ${res.statusCode}`;
             return reject(new Error(msg));
           }
           resolve(json);
@@ -73,6 +77,14 @@ function toBankAccountType(type) {
   return type === 'CONTA_POUPANCA' ? 'savings' : 'checking';
 }
 
+// Converte YYYY-MM-DD → DD/MM/YYYY (formato Pagar.me)
+function formatBirthdate(date) {
+  if (!date) return null;
+  const parts = String(date).split('-');
+  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  return date;
+}
+
 /**
  * Cria um recebedor no Pagar.me com dados pessoais e conta bancária.
  * Retorna o recipient_id (ex: rp_XXXXXXXXXXXXXXXX).
@@ -80,6 +92,7 @@ function toBankAccountType(type) {
 async function createRecipient({
   name, email, document,
   birthdate, companyType,
+  motherName, monthlyIncome, professionalOccupation,
   phone,
   address, addressNumber, complement, neighborhood, city, state, postalCode,
   bankCode, bankAccountType, bankAgency, bankAgencyDigit, bankAccount, bankAccountDigit,
@@ -97,11 +110,29 @@ async function createRecipient({
     ASSOCIATION: 'ASSOCIATION',
   };
 
+  // Endereço (usado em PF e PJ)
+  const addressObj = address ? {
+    street:        address,
+    street_number: addressNumber || 'S/N',
+    complementary: complement   || '',
+    neighborhood:  neighborhood || '',
+    city:          city         || '',
+    state:         state        || '',
+    zip_code:      (postalCode  || '').replace(/\D/g, ''),
+  } : undefined;
+
   const registerInformation = isIndividual
     ? {
         type:     'individual',
+        name,
         email,
         document: rawDoc,
+        mother_name:             motherName             || 'Não informado',
+        monthly_income:          String(monthlyIncome   || '5000'),
+        professional_occupation: professionalOccupation || 'Empresário',
+        ...(birthdate           ? { birthdate: formatBirthdate(birthdate) } : {}),
+        ...(parsedPhone         ? { phone_numbers: [parsedPhone] }          : {}),
+        ...(addressObj          ? { address: addressObj }                   : {}),
       }
     : {
         type:             'corporation',
@@ -109,8 +140,10 @@ async function createRecipient({
         document:         rawDoc,
         company_name:     name,
         trading_name:     name,
-        annual_revenue:   1200000, // R$ 12.000 padrão
+        annual_revenue:   1200000,
         corporation_type: corporationTypeMap[companyType] || 'LTDA',
+        ...(parsedPhone  ? { phone_numbers: [parsedPhone] } : {}),
+        ...(addressObj   ? { address: addressObj }          : {}),
       };
 
   const payload = {

@@ -104,6 +104,11 @@ model FinancialInfo {
   birth_date           String?                       // Data de nascimento (CPF) — formato YYYY-MM-DD
   company_type         String?                       // Tipo de empresa (CNPJ): MEI, LIMITED, etc.
 
+  // Campos KYC obrigatórios pelo Pagar.me (PF)
+  mother_name              String?
+  monthly_income           String?                   // valor em reais como string (ex: "5000")
+  professional_occupation  String?
+
   // Endereço
   address              String?
   address_number       String?
