@@ -4,8 +4,8 @@ process.on('uncaughtException', (err) => {
 });
 
 process.on('unhandledRejection', (reason) => {
-  console.error('[FATAL] unhandledRejection:', reason);
-  process.exit(1);
+  console.error('[WARN] unhandledRejection:', reason);
+  // Não encerra o processo — mantém a API no ar
 });
 
 try {

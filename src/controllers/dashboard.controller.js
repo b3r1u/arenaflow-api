@@ -15,22 +15,23 @@ async function getStats(req, res) {
       return res.status(404).json({ error: 'Estabelecimento não encontrado' });
     }
 
-    // Datas de referência
-    const now      = new Date();
-    const todayStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
+    // Datas de referência no fuso de Brasília (UTC-3)
+    const TZ_OFFSET  = '-03:00';
+    const nowBrazil  = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    const todayStr   = nowBrazil.toISOString().slice(0, 10); // YYYY-MM-DD no horário de Brasília
 
-    const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+    const firstOfMonth = new Date(nowBrazil.getFullYear(), nowBrazil.getMonth(), 1)
       .toISOString().slice(0, 10);
-    const lastOfMonth  = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+    const lastOfMonth  = new Date(nowBrazil.getFullYear(), nowBrazil.getMonth() + 1, 0)
       .toISOString().slice(0, 10);
 
     const whereEstablishment = {
       court: { establishment_id: establishment.id },
     };
 
-    // Intervalo do dia atual
-    const todayStart = new Date(`${todayStr}T00:00:00.000Z`);
-    const todayEnd   = new Date(`${todayStr}T23:59:59.999Z`);
+    // Intervalo do dia atual em Brasília (convertido para UTC no banco)
+    const todayStart = new Date(`${todayStr}T00:00:00.000${TZ_OFFSET}`);
+    const todayEnd   = new Date(`${todayStr}T23:59:59.999${TZ_OFFSET}`);
 
     // Reservas criadas hoje (independente da data da reserva)
     const todayBookings = await prisma.booking.findMany({
@@ -89,4 +90,49 @@ async function getStats(req, res) {
   }
 }
 
-module.exports = { getStats };
+/**
+ * GET /api/dashboard/revenue7days
+ * Retorna faturamento dos últimos 7 dias para o gráfico.
+ */
+async function getRevenue7Days(req, res) {
+  try {
+    const establishment = await prisma.establishment.findUnique({
+      where: { owner_id: req.user.id },
+    });
+    if (!establishment) {
+      return res.status(404).json({ error: 'Estabelecimento não encontrado' });
+    }
+
+    const TZ_OFFSET = '-03:00';
+    const result = [];
+
+    for (let i = 6; i >= 0; i--) {
+      const nowBrazil = new Date(Date.now() - 3 * 60 * 60 * 1000);
+      nowBrazil.setDate(nowBrazil.getDate() - i);
+      const dateStr = nowBrazil.toISOString().slice(0, 10);
+
+      const dayStart = new Date(`${dateStr}T00:00:00.000${TZ_OFFSET}`);
+      const dayEnd   = new Date(`${dateStr}T23:59:59.999${TZ_OFFSET}`);
+
+      const bookings = await prisma.booking.findMany({
+        where: {
+          court: { establishment_id: establishment.id },
+          payment_status: 'PAGO',
+          updated_at: { gte: dayStart, lte: dayEnd },
+        },
+        select: { paid_amount: true },
+      });
+
+      const revenue = bookings.reduce((sum, b) => sum + Number(b.paid_amount), 0);
+      const [year, month, day] = dateStr.split('-');
+      result.push({ day: `${day}/${month}`, revenue });
+    }
+
+    return res.json(result);
+  } catch (err) {
+    console.error('[DASHBOARD/REVENUE7DAYS]', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+module.exports = { getStats, getRevenue7Days };
