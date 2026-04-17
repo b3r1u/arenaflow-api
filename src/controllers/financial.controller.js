@@ -12,7 +12,6 @@ function toPublic(f) {
     pix_key_masked:        maskPixKey(decrypt(f.pix_key_encrypted), f.pix_key_type),
     pagarme_recipient_id:  f.pagarme_recipient_id,
     bank_registered:       !!f.bank_registered_at,
-    status:                f.status,
     lgpd_consent_at:       f.lgpd_consent_at,
     created_at:            f.created_at,
     updated_at:            f.updated_at,
@@ -28,7 +27,18 @@ async function getFinancial(req, res, next) {
     });
     if (!est)           return res.status(404).json({ error: 'Estabelecimento não encontrado' });
     if (!est.financial) return res.json({ financial: null });
-    res.json({ financial: toPublic(est.financial) });
+
+    const pub = toPublic(est.financial);
+
+    // Busca status real do Pagar.me se recebedor já foi criado
+    if (est.financial.pagarme_recipient_id) {
+      try {
+        const recipient = await getRecipient(est.financial.pagarme_recipient_id);
+        pub.pagarme_status = recipient.status; // ex: 'active', 'registration', etc.
+      } catch { /* ignora falhas na consulta ao Pagar.me */ }
+    }
+
+    res.json({ financial: pub });
   } catch (err) { next(err); }
 }
 

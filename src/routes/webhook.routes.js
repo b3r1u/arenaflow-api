@@ -1,9 +1,9 @@
 const { Router } = require('express');
-const { asaasWebhook } = require('../controllers/webhook.controller');
+const { pagarmeWebhook } = require('../controllers/webhook.controller');
 
 const router = Router();
 
-// Endpoint público — sem authenticate (ASAAS chama diretamente)
-router.post('/asaas', asaasWebhook);
+// Endpoint público — Pagar.me chama diretamente
+router.post('/pagarme', pagarmeWebhook);
 
 module.exports = router;

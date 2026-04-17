@@ -179,4 +179,84 @@ async function getRecipient(recipientId) {
   return request('GET', `/recipients/${recipientId}`);
 }
 
-module.exports = { createRecipient, getRecipient };
+/**
+ * Cria um pedido PIX no Pagar.me com split para o recebedor da arena.
+ * amountCents: valor em centavos (ex: 10000 = R$100,00)
+ * recipientId: pagarme_recipient_id do estabelecimento
+ * Retorna { orderId, chargeId, qrCode, qrCodeUrl, expiresAt }
+ */
+async function createOrder({
+  amountCents,
+  recipientId,
+  description,
+  customerName,
+  customerEmail,
+  customerDocument,
+  customerPhone,
+}) {
+  // Parse phone para formato Pagar.me. Fallback para número sandbox válido.
+  const phoneDigits = (customerPhone || '').replace(/\D/g, '');
+  const mobilePhone = phoneDigits.length >= 10
+    ? {
+        country_code: '55',
+        area_code:    phoneDigits.slice(0, 2),
+        number:       phoneDigits.slice(2),
+      }
+    : {
+        country_code: '55',
+        area_code:    '11',
+        number:       '999999999',
+      };
+
+  const payload = {
+    items: [{
+      amount:      amountCents,
+      description: description || 'Reserva de quadra',
+      quantity:    1,
+    }],
+    customer: {
+      name:     customerName     || 'Cliente',
+      email:    customerEmail    || 'cliente@arenaflow.app',
+      document: (customerDocument || '00000000000').replace(/\D/g, ''),
+      type:     'individual',
+      phones: {
+        mobile_phone: mobilePhone,
+      },
+    },
+    payments: [{
+      payment_method: 'pix',
+      pix: { expires_in: 3600 },
+      ...(recipientId ? {
+        split: [{
+          recipient_id: recipientId,
+          amount:       100,
+          type:         'percentage',
+          options: {
+            liable:                true,
+            charge_processing_fee: true,
+            charge_remainder_fee:  true,
+          },
+        }],
+      } : {}),
+    }],
+  };
+
+  const result = await request('POST', '/orders', payload);
+
+  const charge = result.charges?.[0];
+  const tx     = charge?.last_transaction;
+
+  // Debug: log estrutura completa para identificar campos corretos
+  console.log('[PAGARME ORDER] charge:', JSON.stringify(charge, null, 2));
+  console.log('[PAGARME ORDER] tx:', JSON.stringify(tx, null, 2));
+
+  return {
+    orderId:    result.id,
+    chargeId:   charge?.id    || null,
+    qrCode:     tx?.qr_code   || null,
+    qrCodeUrl:  tx?.qr_code_url || null,
+    expiresAt:  tx?.expires_at  || null,
+  };
+}
+
+module.exports = { createRecipient, getRecipient, createOrder };

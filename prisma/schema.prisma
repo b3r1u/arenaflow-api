@@ -170,6 +170,7 @@ model Court {
   hourly_rate      Float
   description      String?
   active           Boolean       @default(true)
+  bookings         Booking[]
   created_at       DateTime      @default(now())
   updated_at       DateTime      @updatedAt
 }
@@ -177,4 +178,39 @@ model Court {
 enum CourtStatus {
   DISPONIVEL
   BLOQUEADA
+}
+
+// ─── Reserva ──────────────────────────────────────────────────────────────────
+model Booking {
+  id                String               @id @default(uuid())
+  arena_id          String
+  court_id          String
+  court             Court                @relation(fields: [court_id], references: [id])
+  user_uid          String
+  client_name       String
+  client_phone      String?
+  date              String               // YYYY-MM-DD
+  start_hour        String               // HH:00
+  end_hour          String               // HH:00
+  duration_hours    Int
+  total_amount      Float
+  paid_amount       Float
+  payment_option    String               // "50" | "100"
+  payment_status    BookingPaymentStatus @default(PENDENTE)
+  split_payment     Boolean              @default(false)
+  num_players       Int?
+  pagarme_order_id  String?
+  pagarme_charge_id String?
+  pix_qr_code       String?
+  pix_qr_code_url   String?
+  pix_expires_at    DateTime?
+  created_at        DateTime             @default(now())
+  updated_at        DateTime             @updatedAt
+}
+
+enum BookingPaymentStatus {
+  PENDENTE
+  PAGO
+  PARCIAL
+  CANCELADO
 }

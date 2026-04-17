@@ -53,4 +53,45 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-module.exports = { authenticate, requireAdmin };
+/**
+ * Igual ao authenticate, mas auto-cria o usuário como CLIENT se não existir.
+ * Usado nas rotas do app booking (clientes).
+ */
+async function authenticateClient(req, res, next) {
+  if (!admin.apps.length) {
+    return res.status(503).json({ error: 'Autenticação indisponível' });
+  }
+
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Token de autenticação não fornecido' });
+  }
+
+  const token = header.split('Bearer ')[1];
+
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    req.firebaseUid = decoded.uid;
+
+    let user = await prisma.user.findUnique({ where: { firebase_uid: decoded.uid } });
+
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          firebase_uid: decoded.uid,
+          email:        decoded.email || `${decoded.uid}@unknown.com`,
+          name:         decoded.name  || null,
+          role:         'CLIENT',
+        },
+      });
+    }
+
+    req.user = user;
+    next();
+  } catch (err) {
+    console.error('[AUTH CLIENT]', err.message);
+    return res.status(401).json({ error: 'Token inválido ou expirado' });
+  }
+}
+
+module.exports = { authenticate, requireAdmin, authenticateClient };

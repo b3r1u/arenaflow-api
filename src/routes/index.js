@@ -7,6 +7,8 @@ const courtsRoutes        = require('./courts.routes');
 const arenasRoutes        = require('./arenas.routes');
 const financialRoutes     = require('./financial.routes');
 const webhookRoutes       = require('./webhook.routes');
+const bookingsRoutes      = require('./bookings.routes');
+const dashboardRoutes     = require('./dashboard.routes');
 
 const router = Router();
 
@@ -17,5 +19,7 @@ router.use('/courts',         courtsRoutes);
 router.use('/arenas',         arenasRoutes);      // público — app cliente
 router.use('/financial',      financialRoutes);
 router.use('/webhook',        webhookRoutes);     // webhooks externos (ASAAS etc)
+router.use('/bookings',       bookingsRoutes);    // reservas do app cliente
+router.use('/dashboard',      dashboardRoutes);   // métricas do admin
 
 module.exports = router;
