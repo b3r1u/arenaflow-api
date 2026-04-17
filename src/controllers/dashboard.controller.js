@@ -135,4 +135,114 @@ async function getRevenue7Days(req, res) {
   }
 }
 
-module.exports = { getStats, getRevenue7Days };
+/**
+ * GET /api/dashboard/bookings-today
+ * Retorna as reservas do dia atual (horário de Brasília) para o estabelecimento.
+ */
+async function getBookingsToday(req, res) {
+  try {
+    const establishment = await prisma.establishment.findUnique({
+      where: { owner_id: req.user.id },
+    });
+    if (!establishment) {
+      return res.status(404).json({ error: 'Estabelecimento não encontrado' });
+    }
+
+    const TZ_OFFSET = '-03:00';
+    const nowBrazil = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    const todayStr  = nowBrazil.toISOString().slice(0, 10);
+
+    const todayStart = new Date(`${todayStr}T00:00:00.000${TZ_OFFSET}`);
+    const todayEnd   = new Date(`${todayStr}T23:59:59.999${TZ_OFFSET}`);
+
+    const bookings = await prisma.booking.findMany({
+      where: {
+        court: { establishment_id: establishment.id },
+        created_at: { gte: todayStart, lte: todayEnd },
+        payment_status: { not: 'CANCELADO' },
+      },
+      select: {
+        id:             true,
+        client_name:    true,
+        start_hour:     true,
+        end_hour:       true,
+        payment_status: true,
+        total_amount:   true,
+        paid_amount:    true,
+        court: {
+          select: { id: true, name: true, sport_type: true },
+        },
+      },
+      orderBy: { start_hour: 'asc' },
+    });
+
+    const result = bookings.map(b => ({
+      id:             b.id,
+      client_name:    b.client_name,
+      start_hour:     b.start_hour,
+      end_hour:       b.end_hour,
+      payment_status: b.payment_status.toLowerCase(),
+      total_amount:   Number(b.total_amount),
+      paid_amount:    Number(b.paid_amount),
+      court_id:       b.court.id,
+      court_name:     b.court.name,
+      sport_type:     b.court.sport_type,
+    }));
+
+    return res.json({ bookings: result });
+  } catch (err) {
+    console.error('[DASHBOARD/BOOKINGS-TODAY]', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+/**
+ * GET /api/dashboard/popular-hours
+ * Retorna contagem de ocupação por hora (últimos 60 dias) para o gráfico de horários populares.
+ */
+async function getPopularHours(req, res) {
+  try {
+    const establishment = await prisma.establishment.findUnique({
+      where: { owner_id: req.user.id },
+    });
+    if (!establishment) {
+      return res.status(404).json({ error: 'Estabelecimento não encontrado' });
+    }
+
+    const since = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000); // últimos 60 dias
+
+    const bookings = await prisma.booking.findMany({
+      where: {
+        court: { establishment_id: establishment.id },
+        payment_status: { not: 'CANCELADO' },
+        created_at: { gte: since },
+      },
+      select: { start_hour: true, end_hour: true },
+    });
+
+    // Inicializa contagem para todas as horas de 07h a 22h
+    const counts = {};
+    for (let h = 7; h <= 22; h++) {
+      counts[`${h.toString().padStart(2, '0')}:00`] = 0;
+    }
+
+    // Expande cada reserva nos slots hora a hora
+    bookings.forEach(b => {
+      const start = parseInt(b.start_hour);
+      const end   = parseInt(b.end_hour);
+      for (let h = start; h < end; h++) {
+        const key = `${h.toString().padStart(2, '0')}:00`;
+        if (counts[key] !== undefined) counts[key]++;
+      }
+    });
+
+    const result = Object.entries(counts).map(([hour, count]) => ({ hour, count }));
+
+    return res.json(result);
+  } catch (err) {
+    console.error('[DASHBOARD/POPULAR-HOURS]', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+module.exports = { getStats, getRevenue7Days, getBookingsToday, getPopularHours };
