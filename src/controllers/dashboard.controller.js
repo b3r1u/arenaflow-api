@@ -327,4 +327,55 @@ async function getReport(req, res) {
   }
 }
 
-module.exports = { getStats, getRevenue7Days, getBookingsToday, getPopularHours, getReport };
+/**
+ * GET /api/dashboard/court-stats?period=30
+ * Retorna ocupação e faturamento por quadra no período.
+ */
+async function getCourtStats(req, res) {
+  try {
+    const establishment = await prisma.establishment.findUnique({
+      where: { owner_id: req.user.id },
+      include: { courts: { where: { active: true }, select: { id: true, name: true } } },
+    });
+    if (!establishment) return res.status(404).json({ error: 'Estabelecimento não encontrado' });
+
+    const period      = Math.min(90, Math.max(1, parseInt(req.query.period) || 30));
+    const maxHours    = period * 16; // 16h operacionais por dia
+    const TZ_OFFSET   = '-03:00';
+    const nowBrazil   = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    const cutoffDate  = new Date(nowBrazil);
+    cutoffDate.setDate(cutoffDate.getDate() - period + 1);
+    const cutoffStart = new Date(`${cutoffDate.toISOString().slice(0, 10)}T00:00:00.000${TZ_OFFSET}`);
+    const todayEnd    = new Date(`${nowBrazil.toISOString().slice(0, 10)}T23:59:59.999${TZ_OFFSET}`);
+
+    const bookings = await prisma.booking.findMany({
+      where: {
+        court: { establishment_id: establishment.id },
+        payment_status: { not: 'CANCELADO' },
+        created_at: { gte: cutoffStart, lte: todayEnd },
+      },
+      select: { court_id: true, duration_hours: true, paid_amount: true, payment_status: true },
+    });
+
+    const stats = establishment.courts.map(court => {
+      const cb      = bookings.filter(b => b.court_id === court.id);
+      const hours   = cb.reduce((s, b) => s + (b.duration_hours || 0), 0);
+      const revenue = cb
+        .filter(b => b.payment_status === 'PAGO')
+        .reduce((s, b) => s + Number(b.paid_amount), 0);
+      return {
+        name:    court.name,
+        hours,
+        revenue,
+        rate: Math.min(100, Math.round((hours / maxHours) * 100)),
+      };
+    });
+
+    return res.json(stats);
+  } catch (err) {
+    console.error('[DASHBOARD/COURT-STATS]', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+module.exports = { getStats, getRevenue7Days, getBookingsToday, getPopularHours, getReport, getCourtStats };
