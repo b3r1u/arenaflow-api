@@ -262,39 +262,59 @@ async function getReport(req, res) {
     const nowBrazil = new Date(Date.now() - 3 * 60 * 60 * 1000);
     const todayStr  = nowBrazil.toISOString().slice(0, 10);
 
-    // Data de corte do período
+    // Data de corte do período (início do dia no fuso de Brasília)
     const cutoffDate = new Date(nowBrazil);
     cutoffDate.setDate(cutoffDate.getDate() - period + 1);
-    const cutoffStr = cutoffDate.toISOString().slice(0, 10);
+    const cutoffStart = new Date(`${cutoffDate.toISOString().slice(0, 10)}T00:00:00.000${TZ_OFFSET}`);
+    const todayEnd    = new Date(`${todayStr}T23:59:59.999${TZ_OFFSET}`);
 
-    const bookings = await prisma.booking.findMany({
+    // Reservas PAGAS no período (pela data do pagamento = updated_at)
+    const paidBookings = await prisma.booking.findMany({
       where: {
         court: { establishment_id: establishment.id },
-        date:  { gte: cutoffStr, lte: todayStr },
-        payment_status: { not: 'CANCELADO' },
+        payment_status: 'PAGO',
+        updated_at: { gte: cutoffStart, lte: todayEnd },
       },
-      select: { payment_status: true, total_amount: true, paid_amount: true, date: true, duration_hours: true },
+      select: { paid_amount: true, updated_at: true },
     });
 
-    const paid = bookings.filter(b => b.payment_status === 'PAGO');
+    // Reservas PENDENTES criadas no período (pela data de criação)
+    const pendingBookings = await prisma.booking.findMany({
+      where: {
+        court: { establishment_id: establishment.id },
+        payment_status: 'PENDENTE',
+        created_at: { gte: cutoffStart, lte: todayEnd },
+      },
+      select: { total_amount: true },
+    });
 
-    const totalRevenue   = paid.reduce((s, b) => s + Number(b.paid_amount), 0);
+    // Total de reservas não canceladas criadas no período
+    const allBookings = await prisma.booking.findMany({
+      where: {
+        court: { establishment_id: establishment.id },
+        payment_status: { not: 'CANCELADO' },
+        created_at: { gte: cutoffStart, lte: todayEnd },
+      },
+      select: { id: true },
+    });
+
+    const totalRevenue   = paidBookings.reduce((s, b) => s + Number(b.paid_amount), 0);
     const avgDaily       = period > 0 ? totalRevenue / period : 0;
-    const totalBookings  = bookings.length;
-    const pendingRevenue = bookings
-      .filter(b => b.payment_status === 'PENDENTE')
-      .reduce((s, b) => s + Number(b.total_amount), 0);
+    const totalBookings  = allBookings.length;
+    const pendingRevenue = pendingBookings.reduce((s, b) => s + Number(b.total_amount), 0);
 
-    // Dados diários para gráfico (até 14 dias)
+    // Dados diários para gráfico (até 14 dias) — baseado na data do pagamento
     const chartDays = Math.min(period, 14);
     const dailyData = [];
     for (let i = chartDays - 1; i >= 0; i--) {
       const d = new Date(nowBrazil);
       d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().slice(0, 10);
-      const label   = `${dateStr.slice(8)}/${dateStr.slice(5, 7)}`;
-      const revenue = paid
-        .filter(b => b.date === dateStr)
+      const dateStr  = d.toISOString().slice(0, 10);
+      const dayStart = new Date(`${dateStr}T00:00:00.000${TZ_OFFSET}`);
+      const dayEnd   = new Date(`${dateStr}T23:59:59.999${TZ_OFFSET}`);
+      const label    = `${dateStr.slice(8)}/${dateStr.slice(5, 7)}`;
+      const revenue  = paidBookings
+        .filter(b => new Date(b.updated_at) >= dayStart && new Date(b.updated_at) <= dayEnd)
         .reduce((s, b) => s + Number(b.paid_amount), 0);
       dailyData.push({ label, revenue });
     }
