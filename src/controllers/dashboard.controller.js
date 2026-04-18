@@ -197,8 +197,8 @@ async function getBookingsToday(req, res) {
 }
 
 /**
- * GET /api/dashboard/popular-hours
- * Retorna contagem de ocupação por hora (últimos 60 dias) para o gráfico de horários populares.
+ * GET /api/dashboard/popular-hours?period=30
+ * Retorna contagem de ocupação por hora no período selecionado.
  */
 async function getPopularHours(req, res) {
   try {
@@ -209,7 +209,8 @@ async function getPopularHours(req, res) {
       return res.status(404).json({ error: 'Estabelecimento não encontrado' });
     }
 
-    const since = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000); // últimos 60 dias
+    const period = Math.min(90, Math.max(1, parseInt(req.query.period) || 60));
+    const since  = new Date(Date.now() - period * 24 * 60 * 60 * 1000);
 
     const bookings = await prisma.booking.findMany({
       where: {
