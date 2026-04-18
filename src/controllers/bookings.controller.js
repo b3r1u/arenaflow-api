@@ -48,7 +48,7 @@ async function create(req, res) {
     const recipientId = court.establishment.financial?.pagarme_recipient_id;
 
     // 4. Cria order PIX no Pagar.me
-    // recipientId=null → PIX simples (sem split) para testar; com id → split para o dono da arena
+    // recipientId=null → PIX simples (sem split); com id → split para o dono da arena (requer conta PSP)
     let pixData = {};
     try {
       pixData = await createOrder({
@@ -57,7 +57,7 @@ async function create(req, res) {
         description:      `${court.name} — ${durationHours}h (${date} ${start_hour}–${end_hour})`,
         customerName:     client_name,
         customerEmail:    req.user?.email || 'cliente@arenaflow.app',
-        customerDocument: req.body.client_document || '00000000000',
+        customerDocument: req.body.client_document || '',
         customerPhone:    client_phone || req.user?.phone || '',
       });
     } catch (pixErr) {

@@ -217,7 +217,7 @@ async function createOrder({
     customer: {
       name:     customerName     || 'Cliente',
       email:    customerEmail    || 'cliente@arenaflow.app',
-      document: (customerDocument || '00000000000').replace(/\D/g, ''),
+      document: (customerDocument || '').replace(/\D/g, ''),
       type:     'individual',
       phones: {
         mobile_phone: mobilePhone,
@@ -226,6 +226,7 @@ async function createOrder({
     payments: [{
       payment_method: 'pix',
       pix: { expires_in: 3600 },
+      // Split: 100% do valor vai para o dono da quadra
       ...(recipientId ? {
         split: [{
           recipient_id: recipientId,
@@ -246,9 +247,7 @@ async function createOrder({
   const charge = result.charges?.[0];
   const tx     = charge?.last_transaction;
 
-  // Debug: log estrutura completa para identificar campos corretos
-  console.log('[PAGARME ORDER] charge:', JSON.stringify(charge, null, 2));
-  console.log('[PAGARME ORDER] tx:', JSON.stringify(tx, null, 2));
+  console.log(`[PAGARME] order ${result.id} → ${result.status} | charge ${charge?.id} → ${charge?.status}`);
 
   return {
     orderId:    result.id,
