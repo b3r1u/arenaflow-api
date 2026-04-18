@@ -245,4 +245,65 @@ async function getPopularHours(req, res) {
   }
 }
 
-module.exports = { getStats, getRevenue7Days, getBookingsToday, getPopularHours };
+/**
+ * GET /api/dashboard/report?period=30
+ * Retorna KPIs de relatório para o período selecionado (7, 15, 30 ou 90 dias).
+ */
+async function getReport(req, res) {
+  try {
+    const establishment = await prisma.establishment.findUnique({
+      where: { owner_id: req.user.id },
+    });
+    if (!establishment) return res.status(404).json({ error: 'Estabelecimento não encontrado' });
+
+    const period = Math.min(90, Math.max(1, parseInt(req.query.period) || 30));
+
+    const TZ_OFFSET = '-03:00';
+    const nowBrazil = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    const todayStr  = nowBrazil.toISOString().slice(0, 10);
+
+    // Data de corte do período
+    const cutoffDate = new Date(nowBrazil);
+    cutoffDate.setDate(cutoffDate.getDate() - period + 1);
+    const cutoffStr = cutoffDate.toISOString().slice(0, 10);
+
+    const bookings = await prisma.booking.findMany({
+      where: {
+        court: { establishment_id: establishment.id },
+        date:  { gte: cutoffStr, lte: todayStr },
+        payment_status: { not: 'CANCELADO' },
+      },
+      select: { payment_status: true, total_amount: true, paid_amount: true, date: true, duration_hours: true },
+    });
+
+    const paid = bookings.filter(b => b.payment_status === 'PAGO');
+
+    const totalRevenue   = paid.reduce((s, b) => s + Number(b.paid_amount), 0);
+    const avgDaily       = period > 0 ? totalRevenue / period : 0;
+    const totalBookings  = bookings.length;
+    const pendingRevenue = bookings
+      .filter(b => b.payment_status === 'PENDENTE')
+      .reduce((s, b) => s + Number(b.total_amount), 0);
+
+    // Dados diários para gráfico (até 14 dias)
+    const chartDays = Math.min(period, 14);
+    const dailyData = [];
+    for (let i = chartDays - 1; i >= 0; i--) {
+      const d = new Date(nowBrazil);
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().slice(0, 10);
+      const label   = `${dateStr.slice(8)}/${dateStr.slice(5, 7)}`;
+      const revenue = paid
+        .filter(b => b.date === dateStr)
+        .reduce((s, b) => s + Number(b.paid_amount), 0);
+      dailyData.push({ label, revenue });
+    }
+
+    return res.json({ totalRevenue, avgDaily, totalBookings, pendingRevenue, dailyData });
+  } catch (err) {
+    console.error('[DASHBOARD/REPORT]', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+module.exports = { getStats, getRevenue7Days, getBookingsToday, getPopularHours, getReport };
