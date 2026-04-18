@@ -378,4 +378,54 @@ async function getCourtStats(req, res) {
   }
 }
 
-module.exports = { getStats, getRevenue7Days, getBookingsToday, getPopularHours, getReport, getCourtStats };
+/**
+ * GET /api/dashboard/payment-stats?period=30
+ * Retorna distribuição de formas de pagamento no período.
+ * Por enquanto todos os pagamentos são PIX (Pagar.me).
+ */
+async function getPaymentStats(req, res) {
+  try {
+    const establishment = await prisma.establishment.findUnique({
+      where: { owner_id: req.user.id },
+    });
+    if (!establishment) return res.status(404).json({ error: 'Estabelecimento não encontrado' });
+
+    const period      = Math.min(90, Math.max(1, parseInt(req.query.period) || 30));
+    const TZ_OFFSET   = '-03:00';
+    const nowBrazil   = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    const cutoffDate  = new Date(nowBrazil);
+    cutoffDate.setDate(cutoffDate.getDate() - period + 1);
+    const cutoffStart = new Date(`${cutoffDate.toISOString().slice(0, 10)}T00:00:00.000${TZ_OFFSET}`);
+    const todayEnd    = new Date(`${nowBrazil.toISOString().slice(0, 10)}T23:59:59.999${TZ_OFFSET}`);
+
+    const bookings = await prisma.booking.findMany({
+      where: {
+        court: { establishment_id: establishment.id },
+        payment_status: { not: 'CANCELADO' },
+        created_at: { gte: cutoffStart, lte: todayEnd },
+      },
+      select: { payment_status: true, paid_amount: true, total_amount: true },
+    });
+
+    const total = bookings.length || 1;
+    const pix   = bookings.filter(b => b.payment_status === 'PAGO');
+
+    return res.json([
+      {
+        label:   'Pix',
+        color:   'hsl(152,69%,40%)',
+        count:   pix.length,
+        total:   pix.reduce((s, b) => s + Number(b.paid_amount), 0),
+        percent: Math.round((pix.length / total) * 100),
+      },
+      { label: 'Cartão',        color: 'hsl(221,83%,53%)', count: 0, total: 0, percent: 0 },
+      { label: 'Dinheiro',      color: 'hsl(36,95%,55%)',  count: 0, total: 0, percent: 0 },
+      { label: 'Não informado', color: 'hsl(160,10%,65%)', count: 0, total: 0, percent: 0 },
+    ]);
+  } catch (err) {
+    console.error('[DASHBOARD/PAYMENT-STATS]', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+module.exports = { getStats, getRevenue7Days, getBookingsToday, getPopularHours, getReport, getCourtStats, getPaymentStats };

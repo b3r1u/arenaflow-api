@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const { authenticate } = require('../middlewares/auth.middleware');
-const { getStats, getRevenue7Days, getBookingsToday, getPopularHours, getReport, getCourtStats } = require('../controllers/dashboard.controller');
+const { getStats, getRevenue7Days, getBookingsToday, getPopularHours, getReport, getCourtStats, getPaymentStats } = require('../controllers/dashboard.controller');
 
 const router = Router();
 
@@ -10,5 +10,6 @@ router.get('/bookings-today', authenticate, getBookingsToday);
 router.get('/popular-hours',  authenticate, getPopularHours);
 router.get('/report',         authenticate, getReport);
 router.get('/court-stats',    authenticate, getCourtStats);
+router.get('/payment-stats',  authenticate, getPaymentStats);
 
 module.exports = router;
