@@ -13,6 +13,7 @@ model User {
   email         String         @unique
   name          String?
   phone         String?
+  cpf           String?
   role          Role           @default(CLIENT)
   establishment Establishment?
   subscription  Subscription?

@@ -11,6 +11,7 @@ const bookingsRoutes      = require('./bookings.routes');
 const dashboardRoutes     = require('./dashboard.routes');
 const clientsRoutes       = require('./clients.routes');
 const adminBookingsRoutes = require('./admin.bookings.routes');
+const usersRoutes         = require('./users.routes');
 
 const router = Router();
 
@@ -25,5 +26,6 @@ router.use('/bookings',       bookingsRoutes);         // reservas do app client
 router.use('/dashboard',      dashboardRoutes);        // métricas do admin
 router.use('/clients',        clientsRoutes);          // clientes do admin
 router.use('/admin/bookings', adminBookingsRoutes);    // agendamentos do admin
+router.use('/users',         usersRoutes);             // perfil do usuário cliente
 
 module.exports = router;
