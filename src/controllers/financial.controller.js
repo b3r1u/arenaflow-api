@@ -137,7 +137,7 @@ async function saveBankAccount(req, res, next) {
         bankCode:       bank_code,
         bankAccountType: account_type,
         bankAgency:     agency,
-        bankAgencyDigit: agency_digit || '',
+        bankAgencyDigit: agency_digit || undefined,
         bankAccount:    account,
         bankAccountDigit: account_digit,
       });

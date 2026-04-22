@@ -155,7 +155,8 @@ async function createRecipient({
       holder_document:     rawDoc,
       bank:                bankCode,
       branch_number:       bankAgency,
-      branch_check_digit:  bankAgencyDigit || '',
+      // branch_check_digit só enviado quando preenchido — string vazia causa invalid_parameter no Pagar.me
+      ...(bankAgencyDigit ? { branch_check_digit: bankAgencyDigit } : {}),
       account_number:      bankAccount,
       account_check_digit: bankAccountDigit,
       type:                toBankAccountType(bankAccountType),
