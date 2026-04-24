@@ -12,6 +12,7 @@ const dashboardRoutes     = require('./dashboard.routes');
 const clientsRoutes       = require('./clients.routes');
 const adminBookingsRoutes = require('./admin.bookings.routes');
 const usersRoutes         = require('./users.routes');
+const reviewsRoutes       = require('./reviews.routes');
 
 const router = Router();
 
@@ -27,5 +28,6 @@ router.use('/dashboard',      dashboardRoutes);        // métricas do admin
 router.use('/clients',        clientsRoutes);          // clientes do admin
 router.use('/admin/bookings', adminBookingsRoutes);    // agendamentos do admin
 router.use('/users',         usersRoutes);             // perfil do usuário cliente
+router.use('/reviews',       reviewsRoutes);           // avaliações de arenas
 
 module.exports = router;

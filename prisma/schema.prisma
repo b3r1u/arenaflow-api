@@ -17,6 +17,7 @@ model User {
   role          Role           @default(CLIENT)
   establishment Establishment?
   subscription  Subscription?
+  reviews       Review[]
   created_at    DateTime       @default(now())
   updated_at    DateTime       @updatedAt
 }
@@ -81,6 +82,7 @@ model Establishment {
   price_to      Float?
   active        Boolean  @default(true)
   courts        Court[]
+  reviews       Review[]
   financial     FinancialInfo?
   created_at    DateTime @default(now())
   updated_at    DateTime @updatedAt
@@ -214,4 +216,17 @@ enum BookingPaymentStatus {
   PAGO
   PARCIAL
   CANCELADO
+}
+
+// ─── Avaliação de Arena ───────────────────────────────────────────────────────
+model Review {
+  id               String        @id @default(uuid())
+  establishment_id String
+  establishment    Establishment @relation(fields: [establishment_id], references: [id], onDelete: Cascade)
+  user_id          String?
+  user             User?         @relation(fields: [user_id], references: [id])
+  user_name        String        // nome denormalizado para exibição
+  stars            Int           // 1–5
+  comment          String?
+  created_at       DateTime      @default(now())
 }

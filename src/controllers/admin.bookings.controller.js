@@ -219,4 +219,48 @@ async function cancel(req, res) {
   }
 }
 
-module.exports = { listByDate, create, update, cancel };
+/* ── GET /api/admin/bookings/month?month=YYYY-MM ─────────────── */
+
+async function listByMonth(req, res) {
+  const { month } = req.query;
+  const now = new Date();
+  const m = month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const [year, monthNum] = m.split('-').map(Number);
+  const startDate = `${m}-01`;
+  const lastDay   = new Date(year, monthNum, 0).getDate();
+  const endDate   = `${m}-${String(lastDay).padStart(2, '0')}`;
+
+  try {
+    const establishment = await prisma.establishment.findUnique({
+      where: { owner_id: req.user.id },
+    });
+    if (!establishment) return res.status(404).json({ error: 'Estabelecimento não encontrado' });
+
+    const rows = await prisma.booking.findMany({
+      where: {
+        court: { establishment_id: establishment.id },
+        date:  { gte: startDate, lte: endDate },
+      },
+      select: {
+        id:             true,
+        client_name:    true,
+        client_phone:   true,
+        date:           true,
+        start_hour:     true,
+        end_hour:       true,
+        total_amount:   true,
+        paid_amount:    true,
+        payment_status: true,
+        court: { select: { id: true, name: true, sport_type: true } },
+      },
+      orderBy: [{ date: 'desc' }, { start_hour: 'desc' }],
+    });
+
+    return res.json({ bookings: rows.map(toDto) });
+  } catch (err) {
+    console.error('[ADMIN/BOOKINGS/MONTH]', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+module.exports = { listByDate, listByMonth, create, update, cancel };

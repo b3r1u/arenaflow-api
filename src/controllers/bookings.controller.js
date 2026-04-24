@@ -198,4 +198,30 @@ async function getMyBookings(req, res) {
   }
 }
 
-module.exports = { create, getById, getMyBookings, simulatePayment };
+/**
+ * GET /api/bookings/availability?arena_id=&court_id=&date=
+ * Público — retorna os horários ocupados de uma quadra numa data.
+ */
+async function getAvailability(req, res) {
+  const { arena_id, court_id, date } = req.query;
+  if (!arena_id || !court_id || !date) {
+    return res.status(400).json({ error: 'Parâmetros obrigatórios: arena_id, court_id, date' });
+  }
+  try {
+    const bookings = await prisma.booking.findMany({
+      where: {
+        arena_id,
+        court_id,
+        date,
+        payment_status: { not: 'CANCELADO' },
+      },
+      select: { start_hour: true, end_hour: true },
+    });
+    return res.json({ slots: bookings });
+  } catch (err) {
+    console.error('[getAvailability]', err.message);
+    return res.status(500).json({ error: 'Erro ao buscar disponibilidade' });
+  }
+}
+
+module.exports = { create, getById, getMyBookings, simulatePayment, getAvailability };
