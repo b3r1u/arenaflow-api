@@ -97,4 +97,22 @@ async function listByArena(req, res) {
   }
 }
 
-module.exports = { create, listByArena };
+/**
+ * GET /api/reviews/mine
+ * Retorna os IDs de arenas que o usuário autenticado já avaliou.
+ */
+async function getMyReviewedArenaIds(req, res) {
+  try {
+    const reviews = await prisma.review.findMany({
+      where:  { user_id: req.user.id },
+      select: { establishment_id: true },
+    });
+    const ids = [...new Set(reviews.map(r => r.establishment_id))];
+    return res.json({ establishment_ids: ids });
+  } catch (err) {
+    console.error('[REVIEWS/MINE]', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+module.exports = { create, listByArena, getMyReviewedArenaIds };
