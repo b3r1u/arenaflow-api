@@ -225,8 +225,11 @@ model Review {
   establishment    Establishment @relation(fields: [establishment_id], references: [id], onDelete: Cascade)
   user_id          String?
   user             User?         @relation(fields: [user_id], references: [id])
+  booking_id       String?       // ID da reserva avaliada (uma avaliação por reserva)
   user_name        String        // nome denormalizado para exibição
   stars            Int           // 1–5
   comment          String?
   created_at       DateTime      @default(now())
+
+  @@unique([user_id, booking_id])
 }

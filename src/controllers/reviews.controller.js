@@ -2,10 +2,10 @@ const prisma = require('../lib/prisma');
 
 /**
  * POST /api/reviews
- * Cria uma avaliação para uma arena. Requer autenticação.
+ * Cria uma avaliação para uma reserva. Requer autenticação.
  */
 async function create(req, res) {
-  const { establishment_id, stars, comment, user_name } = req.body;
+  const { establishment_id, booking_id, stars, comment, user_name } = req.body;
 
   if (!establishment_id || !stars) {
     return res.status(400).json({ error: 'establishment_id e stars são obrigatórios' });
@@ -16,14 +16,22 @@ async function create(req, res) {
   }
 
   try {
-    // req.user já é o objeto do banco (injetado por authenticateClient)
+    // Impede avaliação duplicada para a mesma reserva
+    if (booking_id && req.user?.id) {
+      const existing = await prisma.review.findUnique({
+        where: { user_id_booking_id: { user_id: req.user.id, booking_id } },
+      });
+      if (existing) {
+        return res.status(409).json({ error: 'Você já avaliou esta reserva.' });
+      }
+    }
+
     const resolvedName =
       req.user?.name ||
       user_name ||
       req.user?.email?.split('@')[0] ||
       'Anônimo';
 
-    // Verifica se o estabelecimento existe
     const establishment = await prisma.establishment.findUnique({
       where: { id: establishment_id },
     });
@@ -31,14 +39,14 @@ async function create(req, res) {
       return res.status(404).json({ error: 'Arena não encontrada' });
     }
 
-    // Cria a avaliação
     const review = await prisma.review.create({
       data: {
         establishment_id,
-        user_id:   req.user?.id ?? null,
-        user_name: resolvedName,
-        stars:     starsInt,
-        comment:   comment?.trim() || null,
+        booking_id:  booking_id || null,
+        user_id:     req.user?.id ?? null,
+        user_name:   resolvedName,
+        stars:       starsInt,
+        comment:     comment?.trim() || null,
       },
     });
 
@@ -99,20 +107,20 @@ async function listByArena(req, res) {
 
 /**
  * GET /api/reviews/mine
- * Retorna os IDs de arenas que o usuário autenticado já avaliou.
+ * Retorna os IDs de reservas que o usuário autenticado já avaliou.
  */
-async function getMyReviewedArenaIds(req, res) {
+async function getMyReviewedBookingIds(req, res) {
   try {
     const reviews = await prisma.review.findMany({
-      where:  { user_id: req.user.id },
-      select: { establishment_id: true },
+      where:  { user_id: req.user.id, booking_id: { not: null } },
+      select: { booking_id: true },
     });
-    const ids = [...new Set(reviews.map(r => r.establishment_id))];
-    return res.json({ establishment_ids: ids });
+    const ids = reviews.map(r => r.booking_id);
+    return res.json({ booking_ids: ids });
   } catch (err) {
     console.error('[REVIEWS/MINE]', err.message);
     return res.status(500).json({ error: err.message });
   }
 }
 
-module.exports = { create, listByArena, getMyReviewedArenaIds };
+module.exports = { create, listByArena, getMyReviewedBookingIds };
