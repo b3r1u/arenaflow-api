@@ -18,8 +18,8 @@ async function create(req, res) {
   try {
     // Impede avaliação duplicada para a mesma reserva
     if (booking_id && req.user?.id) {
-      const existing = await prisma.review.findUnique({
-        where: { user_id_booking_id: { user_id: req.user.id, booking_id } },
+      const existing = await prisma.review.findFirst({
+        where: { user_id: req.user.id, booking_id },
       });
       if (existing) {
         return res.status(409).json({ error: 'Você já avaliou esta reserva.' });
