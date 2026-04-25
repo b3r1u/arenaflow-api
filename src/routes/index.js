@@ -12,7 +12,8 @@ const dashboardRoutes     = require('./dashboard.routes');
 const clientsRoutes       = require('./clients.routes');
 const adminBookingsRoutes = require('./admin.bookings.routes');
 const usersRoutes         = require('./users.routes');
-const reviewsRoutes       = require('./reviews.routes');
+const reviewsRoutes        = require('./reviews.routes');
+const publicBookingRoutes  = require('./public.booking.routes');
 
 const router = Router();
 
@@ -29,5 +30,6 @@ router.use('/clients',        clientsRoutes);          // clientes do admin
 router.use('/admin/bookings', adminBookingsRoutes);    // agendamentos do admin
 router.use('/users',         usersRoutes);             // perfil do usuário cliente
 router.use('/reviews',       reviewsRoutes);           // avaliações de arenas
+router.use('/reserva',       publicBookingRoutes);      // consulta pública de reserva (link compartilhável)
 
 module.exports = router;

@@ -207,15 +207,65 @@ model Booking {
   pix_qr_code       String?
   pix_qr_code_url   String?
   pix_expires_at    DateTime?
+  payment_group     BookingPaymentGroup?
   created_at        DateTime             @default(now())
   updated_at        DateTime             @updatedAt
 }
 
 enum BookingPaymentStatus {
+  PENDENTE          // criada, aguardando pagamento
+  PARCIAL           // pelo menos uma cota paga (split)
+  SINAL_PAGO        // 50% pago, restante na arena
+  PAGO              // 100% pago
+  CANCELADO
+}
+
+// ─── Grupo de Pagamento ───────────────────────────────────────────────────────
+model BookingPaymentGroup {
+  id            String                @id @default(uuid())
+  booking_id    String                @unique
+  booking       Booking               @relation(fields: [booking_id], references: [id], onDelete: Cascade)
+  payment_type  PaymentGroupType      // SPLIT | DEPOSIT
+  total_amount  Int                   // em centavos
+  paid_amount   Int                   @default(0)
+  status        PaymentGroupStatus    @default(PENDENTE)
+  splits        BookingPaymentSplit[]
+  created_at    DateTime              @default(now())
+  updated_at    DateTime              @updatedAt
+}
+
+enum PaymentGroupType {
+  SPLIT    // 100% dividido entre jogadores
+  DEPOSIT  // 50% de sinal
+}
+
+enum PaymentGroupStatus {
+  PENDENTE
+  PARCIAL
+  PAGO
+}
+
+// ─── Cota individual de pagamento ─────────────────────────────────────────────
+model BookingPaymentSplit {
+  id                String           @id @default(uuid())
+  group_id          String
+  group             BookingPaymentGroup @relation(fields: [group_id], references: [id], onDelete: Cascade)
+  player_name       String
+  amount            Int              // em centavos
+  pagarme_order_id  String?
+  pagarme_charge_id String?
+  pix_qr_code       String?          // base64 do QR code
+  pix_copy_paste    String?          // código copia e cola
+  pix_expires_at    DateTime?
+  status            SplitStatus      @default(PENDENTE)
+  created_at        DateTime         @default(now())
+  updated_at        DateTime         @updatedAt
+}
+
+enum SplitStatus {
   PENDENTE
   PAGO
-  PARCIAL
-  CANCELADO
+  EXPIRADO
 }
 
 // ─── Avaliação de Arena ───────────────────────────────────────────────────────

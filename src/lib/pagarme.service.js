@@ -259,4 +259,79 @@ async function createOrder({
   };
 }
 
-module.exports = { createRecipient, getRecipient, createOrder };
+/**
+ * Cria uma ordem Pix individual para um jogador (cota da reserva).
+ * Usado no fluxo de divisão de pagamento entre jogadores.
+ * Retorna { orderId, chargeId, qrCode, qrCopyPaste, expiresAt }
+ */
+async function createPlayerPixOrder({
+  amountCents,
+  description,
+  playerName,
+  playerEmail,
+  playerDocument,
+  recipientId,
+}) {
+  const doc = (playerDocument || '00000000000').replace(/\D/g, '').padEnd(11, '0').slice(0, 11);
+
+  const payload = {
+    items: [{
+      amount:      amountCents,
+      description: description || 'Cota de reserva de quadra',
+      quantity:    1,
+    }],
+    customer: {
+      name:     playerName  || 'Jogador',
+      email:    playerEmail || 'jogador@arenaflow.app',
+      document: doc,
+      type:     'individual',
+      phones: {
+        mobile_phone: { country_code: '55', area_code: '11', number: '999999999' },
+      },
+    },
+    payments: [{
+      payment_method: 'pix',
+      pix: { expires_in: 3600 },
+      ...(recipientId ? {
+        split: [{
+          recipient_id: recipientId,
+          amount:       100,
+          type:         'percentage',
+          options: {
+            liable:                true,
+            charge_processing_fee: true,
+            charge_remainder_fee:  true,
+          },
+        }],
+      } : {}),
+    }],
+  };
+
+  const result = await request('POST', '/orders', payload);
+  const charge = result.charges?.[0];
+  const tx     = charge?.last_transaction;
+
+  console.log(`[PAGARME] player order ${result.id} → ${result.status} | charge ${charge?.id} → ${charge?.status}`);
+
+  // Mapeamento Pagar.me V5:
+  //   tx.qr_code     = string EMV "Pix copia e cola" (texto)
+  //   tx.qr_code_url = URL da imagem do QR Code (renderização visual)
+  return {
+    orderId:     result.id,
+    chargeId:    charge?.id         || null,
+    qrCode:      tx?.qr_code_url    || null, // URL da imagem → vai p/ pix_qr_code
+    qrCopyPaste: tx?.qr_code        || null, // EMV texto    → vai p/ pix_copy_paste
+    expiresAt:   tx?.expires_at     || null,
+  };
+}
+
+/**
+ * Consulta o status de uma charge no Pagar.me.
+ * Retorna { id, status, paid_at } — onde status pode ser:
+ * 'pending' | 'paid' | 'canceled' | 'failed' | 'overpaid' | 'underpaid'
+ */
+async function getCharge(chargeId) {
+  return request('GET', `/charges/${chargeId}`);
+}
+
+module.exports = { createRecipient, getRecipient, createOrder, createPlayerPixOrder, getCharge };
