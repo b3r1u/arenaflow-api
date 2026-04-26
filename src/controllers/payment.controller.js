@@ -184,6 +184,8 @@ async function createPaymentGroup(req, res) {
 /**
  * GET /api/bookings/:id/payment-group
  * Retorna o grupo de pagamento e cotas de uma reserva (autenticado).
+ * Para cada split PENDENTE, consulta o Pagar.me e sincroniza status on-demand.
+ * Isso garante atualização mesmo quando o webhook não chega (dev, ngrok offline etc).
  */
 async function getPaymentGroup(req, res) {
   const { id: bookingId } = req.params;
@@ -196,6 +198,52 @@ async function getPaymentGroup(req, res) {
 
     if (!group) {
       return res.status(404).json({ error: 'Grupo de pagamento não encontrado' });
+    }
+
+    // Sincroniza splits PENDENTES com status real do Pagar.me
+    const pendentes = group.splits.filter(s => s.status === 'PENDENTE' && s.pagarme_charge_id);
+
+    for (const split of pendentes) {
+      try {
+        const charge = await getCharge(split.pagarme_charge_id);
+        if (charge.status === 'paid') {
+          // Atualiza split
+          await prisma.bookingPaymentSplit.update({
+            where: { id: split.id },
+            data:  { status: 'PAGO', updated_at: new Date() },
+          });
+          split.status = 'PAGO'; // atualiza objeto em memória para resposta
+
+          // Recalcula grupo
+          const newPaid   = group.paid_amount + split.amount;
+          const groupPago = newPaid >= group.total_amount;
+          await prisma.bookingPaymentGroup.update({
+            where: { id: group.id },
+            data: {
+              paid_amount: newPaid,
+              status:      groupPago ? 'PAGO' : 'PARCIAL',
+              updated_at:  new Date(),
+            },
+          });
+          group.paid_amount = newPaid;
+          group.status      = groupPago ? 'PAGO' : 'PARCIAL';
+
+          // Atualiza booking
+          const bookingStatus = groupPago ? 'PAGO' : 'PARCIAL';
+          await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+              payment_status: bookingStatus,
+              paid_amount:    newPaid / 100,
+              updated_at:     new Date(),
+            },
+          });
+
+          console.log(`[PAYMENT/SYNC] Split ${split.player_name} → PAGO (via polling Pagar.me)`);
+        }
+      } catch (syncErr) {
+        console.warn(`[PAYMENT/SYNC] Erro ao verificar charge ${split.pagarme_charge_id}:`, syncErr.message);
+      }
     }
 
     return res.json({ group });
