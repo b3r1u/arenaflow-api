@@ -16,6 +16,7 @@ function fromDbStatus(s) {
 }
 
 function toDto(b) {
+  const pg = b.payment_group ?? null;
   return {
     id:             b.id,
     client_name:    b.client_name,
@@ -29,6 +30,22 @@ function toDto(b) {
     total_amount:   Number(b.total_amount),
     paid_amount:    Number(b.paid_amount),
     payment_status: fromDbStatus(b.payment_status),
+    split_payment:  b.split_payment ?? false,
+    num_players:    b.num_players   ?? null,
+    payment_group:  pg ? {
+      id:           pg.id,
+      payment_type: pg.payment_type,
+      total_amount: pg.total_amount,
+      paid_amount:  pg.paid_amount,
+      status:       pg.status,
+      splits:       (pg.splits ?? []).map(s => ({
+        id:          s.id,
+        player_name: s.player_name,
+        amount:      s.amount,
+        status:      s.status,
+        pix_expires_at: s.pix_expires_at,
+      })),
+    } : null,
   };
 }
 
@@ -60,7 +77,16 @@ async function listByDate(req, res) {
         total_amount:   true,
         paid_amount:    true,
         payment_status: true,
+        split_payment:  true,
+        num_players:    true,
         court: { select: { id: true, name: true, sport_type: true } },
+        payment_group: {
+          select: {
+            id: true, payment_type: true, total_amount: true,
+            paid_amount: true, status: true,
+            splits: { select: { id: true, player_name: true, amount: true, status: true, pix_expires_at: true }, orderBy: { created_at: 'asc' } },
+          },
+        },
       },
       orderBy: { start_hour: 'asc' },
     });
@@ -251,7 +277,16 @@ async function listByMonth(req, res) {
         total_amount:   true,
         paid_amount:    true,
         payment_status: true,
+        split_payment:  true,
+        num_players:    true,
         court: { select: { id: true, name: true, sport_type: true } },
+        payment_group: {
+          select: {
+            id: true, payment_type: true, total_amount: true,
+            paid_amount: true, status: true,
+            splits: { select: { id: true, player_name: true, amount: true, status: true, pix_expires_at: true }, orderBy: { created_at: 'asc' } },
+          },
+        },
       },
       orderBy: [{ date: 'desc' }, { start_hour: 'desc' }],
     });
