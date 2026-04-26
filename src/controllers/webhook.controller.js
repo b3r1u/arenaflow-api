@@ -51,12 +51,13 @@ async function pagarmeWebhook(req, res) {
       const group      = split.group;
       const newPaid    = group.paid_amount + split.amount;
       const groupPago  = newPaid >= group.total_amount;
+      const halfPago   = newPaid >= group.total_amount * 0.5;
 
       await prisma.bookingPaymentGroup.update({
         where: { id: group.id },
         data: {
           paid_amount: newPaid,
-          status:      groupPago ? 'PAGO' : 'PARCIAL',
+          status:      groupPago ? 'PAGO' : halfPago ? 'PARCIAL' : 'PENDENTE',
           updated_at:  new Date(),
         },
       });
@@ -66,7 +67,8 @@ async function pagarmeWebhook(req, res) {
       let bookingStatus = booking.payment_status;
 
       if (group.payment_type === 'SPLIT') {
-        bookingStatus = groupPago ? 'PAGO' : 'PARCIAL';
+        // < 50% → PENDENTE | >= 50% → PARCIAL (quadra confirmada) | 100% → PAGO
+        bookingStatus = groupPago ? 'PAGO' : halfPago ? 'PARCIAL' : 'PENDENTE';
       } else {
         // DEPOSIT — sinal pago
         bookingStatus = 'SINAL_PAGO';

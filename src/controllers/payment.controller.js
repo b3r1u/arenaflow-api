@@ -217,19 +217,20 @@ async function getPaymentGroup(req, res) {
           // Recalcula grupo
           const newPaid   = group.paid_amount + split.amount;
           const groupPago = newPaid >= group.total_amount;
+          const halfPago  = newPaid >= group.total_amount * 0.5;
           await prisma.bookingPaymentGroup.update({
             where: { id: group.id },
             data: {
               paid_amount: newPaid,
-              status:      groupPago ? 'PAGO' : 'PARCIAL',
+              status:      groupPago ? 'PAGO' : halfPago ? 'PARCIAL' : 'PENDENTE',
               updated_at:  new Date(),
             },
           });
           group.paid_amount = newPaid;
-          group.status      = groupPago ? 'PAGO' : 'PARCIAL';
+          group.status      = groupPago ? 'PAGO' : halfPago ? 'PARCIAL' : 'PENDENTE';
 
-          // Atualiza booking
-          const bookingStatus = groupPago ? 'PAGO' : 'PARCIAL';
+          // Atualiza booking: < 50% → PENDENTE | >= 50% → PARCIAL | 100% → PAGO
+          const bookingStatus = groupPago ? 'PAGO' : halfPago ? 'PARCIAL' : 'PENDENTE';
           await prisma.booking.update({
             where: { id: bookingId },
             data: {
