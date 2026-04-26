@@ -1,6 +1,59 @@
 const prisma  = require('../lib/prisma');
 const { createOrder } = require('../lib/pagarme.service');
 
+/* ── Helpers de cancelamento ─────────────────────────────────────────────── */
+
+/** Constrói Date a partir de booking.date (YYYY-MM-DD) + start_hour (HH:00). */
+function bookingStartDateTime(b) {
+  return new Date(`${b.date}T${b.start_hour}:00`);
+}
+
+/**
+ * Calcula a elegibilidade e o custo do cancelamento.
+ * @param {object} booking — precisa ter date, start_hour, paid_amount
+ * @param {object} policy  — { cancel_policy_enabled, cancel_limit_hours, cancel_fee_percent }
+ * @param {Date}   now     — referência temporal (default: agora)
+ * @returns {{ requires_fee:boolean, hours_remaining:number, fee_amount:number, refund_amount:number, reason:string }}
+ */
+function computeCancelInfo(booking, policy, now = new Date()) {
+  const start = bookingStartDateTime(booking);
+  const hoursRemaining = (start.getTime() - now.getTime()) / 3600000;
+
+  // Política desativada → grátis sempre
+  if (!policy?.cancel_policy_enabled) {
+    return {
+      requires_fee:    false,
+      hours_remaining: hoursRemaining,
+      fee_amount:      0,
+      refund_amount:   booking.paid_amount,
+      reason:          'POLICY_DISABLED',
+    };
+  }
+
+  // Dentro da janela → grátis
+  if (hoursRemaining >= (policy.cancel_limit_hours || 0)) {
+    return {
+      requires_fee:    false,
+      hours_remaining: hoursRemaining,
+      fee_amount:      0,
+      refund_amount:   booking.paid_amount,
+      reason:          'WITHIN_LIMIT',
+    };
+  }
+
+  // Fora da janela → aplica taxa (em reais, 2 casas)
+  const feePct       = Math.max(0, Math.min(100, policy.cancel_fee_percent || 0));
+  const feeAmount    = Math.round(booking.paid_amount * feePct) / 100;
+  const refundAmount = Math.round((booking.paid_amount - feeAmount) * 100) / 100;
+  return {
+    requires_fee:    feeAmount > 0,
+    hours_remaining: hoursRemaining,
+    fee_amount:      feeAmount,
+    refund_amount:   refundAmount,
+    reason:          'OUT_OF_WINDOW',
+  };
+}
+
 /**
  * POST /api/bookings
  * Cria reserva, gera PIX no Pagar.me e retorna QR code.
@@ -224,4 +277,97 @@ async function getAvailability(req, res) {
   }
 }
 
-module.exports = { create, getById, getMyBookings, simulatePayment, getAvailability };
+/**
+ * GET /api/bookings/:id/cancel-preview
+ * Retorna o cálculo do cancelamento sem efeito colateral.
+ * Usado pelo cliente para exibir aviso de multa antes de confirmar.
+ */
+async function getCancelPreview(req, res) {
+  try {
+    const booking = await prisma.booking.findFirst({
+      where:   { id: req.params.id, user_uid: req.user.firebase_uid },
+      include: {
+        court: {
+          include: {
+            establishment: {
+              select: {
+                cancel_policy_enabled: true,
+                cancel_limit_hours:    true,
+                cancel_fee_percent:    true,
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!booking) return res.status(404).json({ error: 'Reserva não encontrada' });
+    if (booking.payment_status === 'CANCELADO') {
+      return res.status(409).json({ error: 'Reserva já está cancelada' });
+    }
+    if (bookingStartDateTime(booking).getTime() <= Date.now()) {
+      return res.status(409).json({ error: 'Reserva já iniciou ou foi finalizada' });
+    }
+
+    const info = computeCancelInfo(booking, booking.court.establishment);
+    return res.json(info);
+  } catch (err) {
+    console.error('[BOOKINGS/CANCEL_PREVIEW]', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+/**
+ * POST /api/bookings/:id/cancel
+ * Executa o cancelamento aplicando a política da arena.
+ * Etapa 1 — atualiza status e devolve o cálculo. Estorno via Pagar.me na Etapa 2.
+ */
+async function cancel(req, res) {
+  try {
+    const booking = await prisma.booking.findFirst({
+      where:   { id: req.params.id, user_uid: req.user.firebase_uid },
+      include: {
+        court: {
+          include: {
+            establishment: {
+              select: {
+                cancel_policy_enabled: true,
+                cancel_limit_hours:    true,
+                cancel_fee_percent:    true,
+              },
+            },
+          },
+        },
+        payment_group: { include: { splits: true } },
+      },
+    });
+    if (!booking) return res.status(404).json({ error: 'Reserva não encontrada' });
+    if (booking.payment_status === 'CANCELADO') {
+      return res.status(409).json({ error: 'Reserva já está cancelada' });
+    }
+    if (bookingStartDateTime(booking).getTime() <= Date.now()) {
+      return res.status(409).json({ error: 'Reserva já iniciou ou foi finalizada' });
+    }
+
+    const info = computeCancelInfo(booking, booking.court.establishment);
+
+    // Atualiza booking → CANCELADO (refund_amount/fee_amount armazenados implicitamente em logs)
+    await prisma.booking.update({
+      where: { id: booking.id },
+      data:  { payment_status: 'CANCELADO', updated_at: new Date() },
+    });
+
+    // TODO ETAPA 2 — Estorno via Pagar.me:
+    // Para cada split em booking.payment_group.splits com status 'PAGO',
+    // disparar cancelCharge(charge_id, refund_amount_cents) e marcar como 'ESTORNADO'.
+    // O valor de estorno por split = split.amount * (1 - feePct/100).
+
+    console.log(`[BOOKINGS/CANCEL] ${booking.id} cancelada — reason=${info.reason} fee=R$${info.fee_amount} refund=R$${info.refund_amount}`);
+
+    return res.json({ ok: true, ...info });
+  } catch (err) {
+    console.error('[BOOKINGS/CANCEL]', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+module.exports = { create, getById, getMyBookings, simulatePayment, getAvailability, getCancelPreview, cancel };
