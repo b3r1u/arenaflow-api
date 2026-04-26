@@ -81,6 +81,12 @@ model Establishment {
   price_from    Float?
   price_to      Float?
   active        Boolean  @default(true)
+
+  // Política de cancelamento
+  cancel_policy_enabled Boolean @default(false)
+  cancel_limit_hours    Float   @default(0)      // horas decimais (ex: 1.5 = 1h30m)
+  cancel_fee_percent    Int     @default(0)       // 0–100
+
   courts        Court[]
   reviews       Review[]
   financial     FinancialInfo?

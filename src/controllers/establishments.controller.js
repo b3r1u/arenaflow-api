@@ -13,6 +13,11 @@ const EstablishmentSchema = z.object({
   logo_color:    z.string().optional(),
   logo_initials: z.string().max(3).optional(),
   logo_url:      z.string().nullable().optional(),
+
+  // Política de cancelamento
+  cancel_policy_enabled: z.boolean().optional(),
+  cancel_limit_hours:    z.number().min(0).optional(),
+  cancel_fee_percent:    z.number().int().min(0).max(100).optional(),
 });
 
 /**
