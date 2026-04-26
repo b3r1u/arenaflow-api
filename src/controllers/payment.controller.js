@@ -253,4 +253,76 @@ async function getPaymentGroup(req, res) {
   }
 }
 
-module.exports = { createPaymentGroup, getPaymentGroup };
+/**
+ * POST /api/bookings/:id/splits/:splitId/regenerate
+ * Regenera o QR Code PIX de uma cota expirada ou falha.
+ * Apenas o dono da reserva pode regenerar.
+ */
+async function regenerateSplit(req, res) {
+  const { id: bookingId, splitId } = req.params;
+
+  try {
+    // Valida que a reserva pertence ao usuário
+    const booking = await prisma.booking.findFirst({
+      where:   { id: bookingId, user_uid: req.user.firebase_uid },
+      include: {
+        court: { include: { establishment: { include: { financial: true } } } },
+      },
+    });
+    if (!booking) return res.status(404).json({ error: 'Reserva não encontrada' });
+
+    // Busca a cota
+    const split = await prisma.bookingPaymentSplit.findFirst({
+      where: { id: splitId, group: { booking_id: bookingId } },
+      include: { group: true },
+    });
+    if (!split) return res.status(404).json({ error: 'Cota não encontrada' });
+    if (split.status === 'PAGO') return res.status(409).json({ error: 'Cota já foi paga' });
+
+    const recipientId = booking.court.establishment.financial?.pagarme_recipient_id || null;
+    const arenaDesc   = `${booking.court.name} — ${booking.date} ${booking.start_hour}–${booking.end_hour}`;
+
+    // Cria novo order no Pagar.me
+    const pixData = await createPlayerPixOrder({
+      amountCents:    split.amount,
+      description:    `[Cota de ${split.player_name}] ${arenaDesc}`,
+      playerName:     split.player_name,
+      playerEmail:    null,
+      playerDocument: null,
+      recipientId,
+    });
+
+    // Atualiza a cota com o novo QR
+    const updated = await prisma.bookingPaymentSplit.update({
+      where: { id: splitId },
+      data: {
+        pagarme_order_id:  pixData.orderId,
+        pagarme_charge_id: pixData.chargeId,
+        pix_qr_code:       pixData.qrCode,
+        pix_copy_paste:    pixData.qrCopyPaste,
+        pix_expires_at:    pixData.expiresAt ? new Date(pixData.expiresAt) : null,
+        status:            'PENDENTE',
+        updated_at:        new Date(),
+      },
+    });
+
+    console.log(`[PAYMENT/REGEN] Cota ${split.player_name} regenerada → order ${pixData.orderId}`);
+
+    return res.json({
+      split: {
+        id:             updated.id,
+        player_name:    updated.player_name,
+        amount:         updated.amount,
+        pix_qr_code:    updated.pix_qr_code,
+        pix_copy_paste: updated.pix_copy_paste,
+        pix_expires_at: updated.pix_expires_at,
+        status:         updated.status,
+      },
+    });
+  } catch (err) {
+    console.error('[PAYMENT/REGEN]', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+module.exports = { createPaymentGroup, getPaymentGroup, regenerateSplit };

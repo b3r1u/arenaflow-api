@@ -226,7 +226,7 @@ async function createOrder({
     },
     payments: [{
       payment_method: 'pix',
-      pix: { expires_in: 3600 },
+      pix: { expires_in: 86400 }, // 24h
       // Split: 100% do valor vai para o dono da quadra
       ...(recipientId ? {
         split: [{
@@ -291,7 +291,7 @@ async function createPlayerPixOrder({
     },
     payments: [{
       payment_method: 'pix',
-      pix: { expires_in: 3600 },
+      pix: { expires_in: 86400 }, // 24h
       ...(recipientId ? {
         split: [{
           recipient_id: recipientId,
