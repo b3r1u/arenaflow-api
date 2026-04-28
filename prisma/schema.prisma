@@ -272,6 +272,7 @@ enum SplitStatus {
   PENDENTE
   PAGO
   EXPIRADO
+  ESTORNADO
 }
 
 // ─── Avaliação de Arena ───────────────────────────────────────────────────────

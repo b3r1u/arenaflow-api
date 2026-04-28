@@ -334,4 +334,20 @@ async function getCharge(chargeId) {
   return request('GET', `/charges/${chargeId}`);
 }
 
-module.exports = { createRecipient, getRecipient, createOrder, createPlayerPixOrder, getCharge };
+/**
+ * Cancela (estorna) uma charge no Pagar.me.
+ * Para PIX pago, isso dispara um estorno ao pagante.
+ *
+ * @param {string} chargeId   — ID da charge (ch_XXXXXXXXXXXXXXXXXX)
+ * @param {number|null} amountCents — Valor em centavos a estornar.
+ *   null ou omitido → estorno integral.
+ *   valor parcial   → estorno parcial (a diferença fica com o recebedor).
+ */
+async function cancelCharge(chargeId, amountCents) {
+  const body = (amountCents != null && amountCents > 0)
+    ? { amount: amountCents }
+    : undefined;
+  return request('DELETE', `/charges/${chargeId}`, body);
+}
+
+module.exports = { createRecipient, getRecipient, createOrder, createPlayerPixOrder, getCharge, cancelCharge };

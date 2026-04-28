@@ -1,5 +1,5 @@
 const prisma  = require('../lib/prisma');
-const { createOrder } = require('../lib/pagarme.service');
+const { createOrder, cancelCharge } = require('../lib/pagarme.service');
 
 /* ── Helpers de cancelamento ─────────────────────────────────────────────── */
 
@@ -356,10 +356,50 @@ async function cancel(req, res) {
       data:  { payment_status: 'CANCELADO', updated_at: new Date() },
     });
 
-    // TODO ETAPA 2 — Estorno via Pagar.me:
-    // Para cada split em booking.payment_group.splits com status 'PAGO',
-    // disparar cancelCharge(charge_id, refund_amount_cents) e marcar como 'ESTORNADO'.
-    // O valor de estorno por split = split.amount * (1 - feePct/100).
+    // ── Etapa 2: Estorno via Pagar.me ────────────────────────────────────────
+    const feePct = booking.court.establishment.cancel_fee_percent || 0;
+
+    if (booking.payment_group?.splits?.length > 0) {
+      // Fluxo split (SPLIT ou DEPOSIT): estorna cada cota paga individualmente
+      const splitsPagas = booking.payment_group.splits.filter(s => s.status === 'PAGO');
+
+      for (const split of splitsPagas) {
+        if (!split.pagarme_charge_id) {
+          console.warn(`[BOOKINGS/CANCEL] split ${split.id} sem charge_id — pulando estorno`);
+          continue;
+        }
+
+        // Estorno integral (sem taxa) ou parcial (com taxa) em centavos
+        const refundCents = info.requires_fee
+          ? Math.round(split.amount * (100 - feePct) / 100)
+          : null; // null = estorno integral
+
+        try {
+          await cancelCharge(split.pagarme_charge_id, refundCents);
+          await prisma.bookingPaymentSplit.update({
+            where: { id: split.id },
+            data:  { status: 'ESTORNADO', updated_at: new Date() },
+          });
+          console.log(`[BOOKINGS/CANCEL] split ${split.id} estornado — R$${(refundCents ?? split.amount) / 100}`);
+        } catch (refundErr) {
+          // Loga mas não aborta: o booking já está CANCELADO no banco
+          console.error(`[BOOKINGS/CANCEL] falha ao estornar split ${split.id}:`, refundErr.message);
+        }
+      }
+
+    } else if (booking.pagarme_charge_id && booking.paid_amount > 0) {
+      // Fluxo 100% individual (sem grupo): estorna a charge direta do booking
+      const refundCents = info.requires_fee
+        ? Math.round(info.refund_amount * 100)
+        : null; // null = estorno integral
+
+      try {
+        await cancelCharge(booking.pagarme_charge_id, refundCents);
+        console.log(`[BOOKINGS/CANCEL] charge ${booking.pagarme_charge_id} estornada — R$${(refundCents ?? booking.paid_amount * 100) / 100}`);
+      } catch (refundErr) {
+        console.error(`[BOOKINGS/CANCEL] falha ao estornar charge ${booking.pagarme_charge_id}:`, refundErr.message);
+      }
+    }
 
     console.log(`[BOOKINGS/CANCEL] ${booking.id} cancelada — reason=${info.reason} fee=R$${info.fee_amount} refund=R$${info.refund_amount}`);
 
