@@ -113,20 +113,20 @@ async function pagarmeWebhook(req, res) {
     }
 
     // ── charge.refunded: estorno confirmado pelo Pagar.me ─────────────────────
-    // Disparado após cancelCharge() ser processado com sucesso.
-    // SUGESTÃO: adicionar status ESTORNADO ao enum BookingPaymentStatus para
-    // distinguir CANCELADO (sem pagamento) de CANCELADO + estorno confirmado.
+    // Disparado quando cancelCharge() é processado com sucesso pelo Pagar.me.
+    // NÃO confundir com charge.chargedback (contestação pelo banco/cliente).
     if (type === 'charge.refunded') {
       const chargeId = event?.data?.id;
       if (!chargeId) return;
 
-      // Tenta encontrar split correspondente (fluxo de pagamento dividido)
+      // Fluxo split: SplitStatus possui ESTORNADO no schema — usa diretamente.
       const split = await prisma.bookingPaymentSplit.findFirst({
         where:   { pagarme_charge_id: chargeId },
         include: { group: true },
       });
 
       if (split) {
+        // Idempotência: só atualiza se ainda não estava ESTORNADO.
         if (split.status !== 'ESTORNADO') {
           await prisma.bookingPaymentSplit.update({
             where: { id: split.id },
@@ -137,21 +137,24 @@ async function pagarmeWebhook(req, res) {
         return;
       }
 
-      // Tenta encontrar booking direto (fluxo individual)
+      // Fluxo direto: BookingPaymentStatus NÃO possui ESTORNADO no schema atual.
+      // Usa CANCELADO como representação de "cancelado com estorno confirmado".
+      // SUGESTÃO: adicionar ESTORNADO ao enum BookingPaymentStatus para distinguir
+      // cancelamento sem pagamento (CANCELADO) de cancelamento com estorno (ESTORNADO).
       const booking = await prisma.booking.findFirst({
         where: { pagarme_charge_id: chargeId },
       });
 
       if (booking) {
-        // Booking já deve estar CANCELADO (marcado no cancel endpoint).
-        // Idempotência: atualiza apenas se ainda não estiver cancelado.
+        // Idempotência: booking já deve estar CANCELADO (marcado no cancel endpoint após cancelCharge).
+        // Este webhook serve como confirmação assíncrona — atualiza apenas se necessário.
         if (booking.payment_status !== 'CANCELADO') {
           await prisma.booking.update({
             where: { id: booking.id },
             data:  { payment_status: 'CANCELADO', updated_at: new Date() },
           });
         }
-        console.log(`[WEBHOOK] charge.refunded → booking ${booking.id} estorno confirmado (status: CANCELADO)`);
+        console.log(`[WEBHOOK] charge.refunded → booking ${booking.id} estorno confirmado (representado como CANCELADO no schema atual)`);
         return;
       }
 
