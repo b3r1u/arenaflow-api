@@ -1,5 +1,5 @@
 const prisma  = require('../lib/prisma');
-const { createOrder, cancelCharge } = require('../lib/pagarme.service');
+const { createOrder, cancelCharge, getCharge } = require('../lib/pagarme.service');
 
 /* ── Helpers de cancelamento ─────────────────────────────────────────────── */
 
@@ -318,8 +318,11 @@ async function getCancelPreview(req, res) {
 
 /**
  * POST /api/bookings/:id/cancel
- * Executa o cancelamento aplicando a política da arena.
- * Etapa 1 — atualiza status e devolve o cálculo. Estorno via Pagar.me na Etapa 2.
+ * Executa o cancelamento aplicando a política da arena e dispara estorno real no Pagar.me.
+ *
+ * SUGESTÃO DE SCHEMA (não implementado — requer migrate):
+ *   BookingPaymentStatus: adicionar ESTORNADO, CHARGEDBACK
+ *   Booking: adicionar canceled_at DateTime?
  */
 async function cancel(req, res) {
   try {
@@ -348,31 +351,56 @@ async function cancel(req, res) {
       return res.status(409).json({ error: 'Reserva já iniciou ou foi finalizada' });
     }
 
+    // Guarda o status original antes de atualizar (usado nas verificações de estorno abaixo)
+    const originalStatus = booking.payment_status;
+
     const info = computeCancelInfo(booking, booking.court.establishment);
 
-    // Atualiza booking → CANCELADO (refund_amount/fee_amount armazenados implicitamente em logs)
+    // Marca booking como CANCELADO no banco.
+    // SUGESTÃO: usar status intermediário ESTORNADO após confirmação do webhook charge.refunded.
     await prisma.booking.update({
       where: { id: booking.id },
       data:  { payment_status: 'CANCELADO', updated_at: new Date() },
     });
 
-    // ── Etapa 2: Estorno via Pagar.me ────────────────────────────────────────
-    const feePct = booking.court.establishment.cancel_fee_percent || 0;
+    const feePct              = booking.court.establishment.cancel_fee_percent || 0;
+    let pagarmeRefundRequested = false;
+    let refundedChargeId       = null;
 
+    // ── Fluxo split: estorna cada cota paga individualmente ──────────────────
     if (booking.payment_group?.splits?.length > 0) {
-      // Fluxo split (SPLIT ou DEPOSIT): estorna cada cota paga individualmente
       const splitsPagas = booking.payment_group.splits.filter(s => s.status === 'PAGO');
 
       for (const split of splitsPagas) {
         if (!split.pagarme_charge_id) {
-          console.warn(`[BOOKINGS/CANCEL] split ${split.id} sem charge_id — pulando estorno`);
+          console.warn(`[BOOKINGS/CANCEL] split ${split.id} sem charge_id — pulando`);
           continue;
         }
 
-        // Estorno integral (sem taxa) ou parcial (com taxa) em centavos
+        // Verifica status atual na Pagar.me para evitar duplo estorno
+        let chargeStatus = null;
+        try {
+          const charge = await getCharge(split.pagarme_charge_id);
+          chargeStatus = charge.status;
+        } catch (err) {
+          console.warn(`[BOOKINGS/CANCEL] falha ao consultar split charge ${split.pagarme_charge_id}:`, err.message);
+        }
+
+        if (chargeStatus === 'refunded' || chargeStatus === 'chargedback') {
+          console.log(`[BOOKINGS/CANCEL] split ${split.id} charge já "${chargeStatus}" — duplo estorno evitado`);
+          continue;
+        }
+        if (chargeStatus && chargeStatus !== 'paid') {
+          console.log(`[BOOKINGS/CANCEL] split ${split.id} charge "${chargeStatus}" (não pago) — estorno ignorado`);
+          continue;
+        }
+
+        // Calcula valor em centavos: parcial (com taxa) ou integral (null = 100%)
         const refundCents = info.requires_fee
           ? Math.round(split.amount * (100 - feePct) / 100)
-          : null; // null = estorno integral
+          : null;
+
+        console.log(`[BOOKINGS/CANCEL] estornando split ${split.id} | charge=${split.pagarme_charge_id} | amountCents=${refundCents ?? split.amount}`);
 
         try {
           await cancelCharge(split.pagarme_charge_id, refundCents);
@@ -380,30 +408,72 @@ async function cancel(req, res) {
             where: { id: split.id },
             data:  { status: 'ESTORNADO', updated_at: new Date() },
           });
-          console.log(`[BOOKINGS/CANCEL] split ${split.id} estornado — R$${(refundCents ?? split.amount) / 100}`);
+          console.log(`[BOOKINGS/CANCEL] split ${split.id} estornado com sucesso — R$${((refundCents ?? split.amount) / 100).toFixed(2)}`);
+          pagarmeRefundRequested = true;
         } catch (refundErr) {
-          // Loga mas não aborta: o booking já está CANCELADO no banco
           console.error(`[BOOKINGS/CANCEL] falha ao estornar split ${split.id}:`, refundErr.message);
         }
       }
 
+    // ── Fluxo direto: estorna a charge individual da reserva ─────────────────
     } else if (booking.pagarme_charge_id && booking.paid_amount > 0) {
-      // Fluxo 100% individual (sem grupo): estorna a charge direta do booking
-      const refundCents = info.requires_fee
-        ? Math.round(info.refund_amount * 100)
-        : null; // null = estorno integral
 
-      try {
-        await cancelCharge(booking.pagarme_charge_id, refundCents);
-        console.log(`[BOOKINGS/CANCEL] charge ${booking.pagarme_charge_id} estornada — R$${(refundCents ?? booking.paid_amount * 100) / 100}`);
-      } catch (refundErr) {
-        console.error(`[BOOKINGS/CANCEL] falha ao estornar charge ${booking.pagarme_charge_id}:`, refundErr.message);
+      // Só estorna se o booking realmente tinha pagamento confirmado
+      const isPaid = ['PAGO', 'SINAL_PAGO', 'PARCIAL'].includes(originalStatus);
+      if (!isPaid) {
+        console.log(`[BOOKINGS/CANCEL] booking ${booking.id} status="${originalStatus}" — sem pagamento real, estorno ignorado`);
+      } else {
+
+        // Verifica status atual na Pagar.me para evitar duplo estorno
+        let chargeStatus = null;
+        try {
+          const charge = await getCharge(booking.pagarme_charge_id);
+          chargeStatus = charge.status;
+          console.log(`[BOOKINGS/CANCEL] charge ${booking.pagarme_charge_id} status="${chargeStatus}"`);
+        } catch (err) {
+          console.warn(`[BOOKINGS/CANCEL] falha ao consultar charge ${booking.pagarme_charge_id}:`, err.message);
+        }
+
+        if (chargeStatus === 'refunded' || chargeStatus === 'chargedback') {
+          console.log(`[BOOKINGS/CANCEL] charge já "${chargeStatus}" — duplo estorno evitado`);
+        } else if (chargeStatus && chargeStatus !== 'paid') {
+          console.log(`[BOOKINGS/CANCEL] charge "${chargeStatus}" (não pago) — estorno ignorado`);
+        } else {
+
+          // Calcula valor em centavos: parcial (com taxa) ou integral (null = 100%)
+          const refundCents = info.requires_fee
+            ? Math.round(info.refund_amount * 100)
+            : null;
+
+          console.log(`[BOOKINGS/CANCEL] estornando charge=${booking.pagarme_charge_id} | amountCents=${refundCents ?? Math.round(booking.paid_amount * 100)}`);
+
+          try {
+            await cancelCharge(booking.pagarme_charge_id, refundCents);
+            console.log(`[BOOKINGS/CANCEL] charge ${booking.pagarme_charge_id} estornada com sucesso — R$${((refundCents ?? Math.round(booking.paid_amount * 100)) / 100).toFixed(2)}`);
+            pagarmeRefundRequested = true;
+            refundedChargeId       = booking.pagarme_charge_id;
+          } catch (refundErr) {
+            console.error(`[BOOKINGS/CANCEL] falha ao estornar charge ${booking.pagarme_charge_id}:`, refundErr.message);
+          }
+        }
       }
     }
 
-    console.log(`[BOOKINGS/CANCEL] ${booking.id} cancelada — reason=${info.reason} fee=R$${info.fee_amount} refund=R$${info.refund_amount}`);
+    const refundAmountCents = Math.round(info.refund_amount * 100);
 
-    return res.json({ ok: true, ...info });
+    console.log(`[BOOKINGS/CANCEL] ${booking.id} → CANCELADO | reason=${info.reason} | fee=R$${info.fee_amount} | refund=R$${info.refund_amount} | pagarme_requested=${pagarmeRefundRequested}`);
+
+    return res.json({
+      ok:                       true,
+      requires_fee:             info.requires_fee,
+      hours_remaining:          info.hours_remaining,
+      fee_amount:               info.fee_amount,
+      refund_amount:            info.refund_amount,
+      refund_amount_cents:      refundAmountCents,
+      reason:                   info.reason,
+      pagarme_refund_requested: pagarmeRefundRequested,
+      pagarme_charge_id:        refundedChargeId ?? booking.pagarme_charge_id ?? null,
+    });
   } catch (err) {
     console.error('[BOOKINGS/CANCEL]', err.message);
     return res.status(500).json({ error: err.message });

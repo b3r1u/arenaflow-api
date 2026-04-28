@@ -112,6 +112,93 @@ async function pagarmeWebhook(req, res) {
       return;
     }
 
+    // ── charge.refunded: estorno confirmado pelo Pagar.me ─────────────────────
+    // Disparado após cancelCharge() ser processado com sucesso.
+    // SUGESTÃO: adicionar status ESTORNADO ao enum BookingPaymentStatus para
+    // distinguir CANCELADO (sem pagamento) de CANCELADO + estorno confirmado.
+    if (type === 'charge.refunded') {
+      const chargeId = event?.data?.id;
+      if (!chargeId) return;
+
+      // Tenta encontrar split correspondente (fluxo de pagamento dividido)
+      const split = await prisma.bookingPaymentSplit.findFirst({
+        where:   { pagarme_charge_id: chargeId },
+        include: { group: true },
+      });
+
+      if (split) {
+        if (split.status !== 'ESTORNADO') {
+          await prisma.bookingPaymentSplit.update({
+            where: { id: split.id },
+            data:  { status: 'ESTORNADO', updated_at: new Date() },
+          });
+        }
+        console.log(`[WEBHOOK] charge.refunded → split ${split.id} confirmado como ESTORNADO`);
+        return;
+      }
+
+      // Tenta encontrar booking direto (fluxo individual)
+      const booking = await prisma.booking.findFirst({
+        where: { pagarme_charge_id: chargeId },
+      });
+
+      if (booking) {
+        // Booking já deve estar CANCELADO (marcado no cancel endpoint).
+        // Idempotência: atualiza apenas se ainda não estiver cancelado.
+        if (booking.payment_status !== 'CANCELADO') {
+          await prisma.booking.update({
+            where: { id: booking.id },
+            data:  { payment_status: 'CANCELADO', updated_at: new Date() },
+          });
+        }
+        console.log(`[WEBHOOK] charge.refunded → booking ${booking.id} estorno confirmado (status: CANCELADO)`);
+        return;
+      }
+
+      console.warn('[WEBHOOK] charge.refunded sem booking/split correspondente:', chargeId);
+      return;
+    }
+
+    // ── charge.chargedback: disputa de pagamento iniciada pelo portador ────────
+    // Chargeback é diferente de refund: iniciado pelo banco/cliente sem ação nossa.
+    // SUGESTÃO: adicionar status CHARGEDBACK ao enum BookingPaymentStatus e
+    // SplitStatus para rastrear disputas separadamente de estornos voluntários.
+    if (type === 'charge.chargedback') {
+      const chargeId = event?.data?.id;
+      if (!chargeId) return;
+
+      // Tenta encontrar booking direto
+      const booking = await prisma.booking.findFirst({
+        where: { pagarme_charge_id: chargeId },
+      });
+
+      if (booking) {
+        // SUGESTÃO: usar status CHARGEDBACK para distinguir de CANCELADO normal.
+        // Por ora usa CANCELADO — os dois fluxos têm semânticas distintas.
+        await prisma.booking.update({
+          where: { id: booking.id },
+          data:  { payment_status: 'CANCELADO', updated_at: new Date() },
+        });
+        console.log(`[WEBHOOK] charge.chargedback → booking ${booking.id} → CANCELADO (chargeback — NÃO confundir com refund)`);
+        return;
+      }
+
+      // Tenta encontrar split correspondente
+      const split = await prisma.bookingPaymentSplit.findFirst({
+        where:   { pagarme_charge_id: chargeId },
+        include: { group: { include: { booking: true } } },
+      });
+
+      if (split) {
+        // SUGESTÃO: adicionar status CHARGEDBACK ao enum SplitStatus.
+        console.log(`[WEBHOOK] charge.chargedback → split ${split.id} | booking ${split.group.booking_id} (sem status CHARGEDBACK no schema — apenas logado)`);
+        return;
+      }
+
+      console.warn('[WEBHOOK] charge.chargedback sem booking/split correspondente:', chargeId);
+      return;
+    }
+
     // Outros eventos — apenas loga
     console.log('[WEBHOOK] Evento ignorado:', type);
 
