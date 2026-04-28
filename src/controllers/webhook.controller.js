@@ -124,13 +124,26 @@ async function pagarmeWebhook(req, res) {
         return;
       }
 
-      // Fluxo legado: atualiza booking diretamente pelo order_id
-      await prisma.booking.updateMany({
+      // Fluxo direto: busca booking pelo order_id para checar payment_option
+      const booking = await prisma.booking.findFirst({
         where: { pagarme_order_id: orderId },
-        data:  { payment_status: 'PAGO', updated_at: new Date() },
       });
 
-      console.log('[WEBHOOK] Reserva legada atualizada para PAGO, order:', orderId);
+      if (!booking) {
+        console.warn('[WEBHOOK] order.paid sem booking correspondente, order:', orderId);
+        return;
+      }
+
+      // Reserva 50% → entrada paga (SINAL_PAGO), ainda falta o saldo
+      // Reserva 100% → pagamento completo (PAGO)
+      const newStatus = booking.payment_option === '50' ? 'SINAL_PAGO' : 'PAGO';
+
+      await prisma.booking.update({
+        where: { id: booking.id },
+        data:  { payment_status: newStatus, updated_at: new Date() },
+      });
+
+      console.log(`[WEBHOOK] order.paid → booking ${booking.id} (${booking.payment_option}%) → ${newStatus}`);
       return;
     }
 
