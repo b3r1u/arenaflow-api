@@ -31,7 +31,29 @@ async function pagarmeWebhook(req, res) {
       });
 
       if (!split) {
-        console.warn('[WEBHOOK] charge.paid sem split correspondente:', chargeId);
+        // Verifica se é um booking direto com este charge (ex: pagamento de saldo 50%→100%)
+        const booking = await prisma.booking.findFirst({
+          where: { pagarme_charge_id: chargeId },
+        });
+
+        if (booking) {
+          if (booking.payment_status === 'PAGO') {
+            console.log('[WEBHOOK] charge.paid → booking já PAGO, ignorando:', booking.id);
+            return;
+          }
+          await prisma.booking.update({
+            where: { id: booking.id },
+            data: {
+              payment_status: 'PAGO',
+              paid_amount:    Number(booking.total_amount),
+              updated_at:     new Date(),
+            },
+          });
+          console.log(`[WEBHOOK] charge.paid → booking ${booking.id} (saldo quitado) → PAGO`);
+          return;
+        }
+
+        console.warn('[WEBHOOK] charge.paid sem split/booking correspondente:', chargeId);
         return;
       }
 

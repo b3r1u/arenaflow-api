@@ -495,4 +495,83 @@ async function cancel(req, res) {
   }
 }
 
-module.exports = { create, getById, getMyBookings, simulatePayment, getAvailability, getCancelPreview, cancel };
+/**
+ * POST /api/bookings/:id/pay-balance
+ * Gera um novo PIX para o saldo restante de uma reserva com entrada de 50%.
+ * Só funciona para bookings com payment_status = SINAL_PAGO e payment_option = '50'.
+ */
+async function payBalance(req, res) {
+  try {
+    const booking = await prisma.booking.findFirst({
+      where: { id: req.params.id, user_uid: req.user.firebase_uid },
+      include: {
+        court: { include: { establishment: { include: { financial: true } } } },
+      },
+    });
+
+    if (!booking) return res.status(404).json({ error: 'Reserva não encontrada' });
+
+    if (booking.payment_status !== 'SINAL_PAGO') {
+      return res.status(409).json({ error: 'Esta reserva não possui saldo pendente para pagamento' });
+    }
+
+    if (booking.payment_option !== '50') {
+      return res.status(409).json({ error: 'Esta reserva não é do tipo entrada (50%)' });
+    }
+
+    const remainingReais = Number(booking.total_amount) - Number(booking.paid_amount);
+    const amountCents    = Math.round(remainingReais * 100);
+
+    if (amountCents < 100) {
+      return res.status(409).json({ error: 'Saldo restante muito pequeno (mínimo R$1,00)' });
+    }
+
+    const recipientId = booking.court.establishment.financial?.pagarme_recipient_id || null;
+
+    let pixData = { orderId: null, chargeId: null, qrCode: null, qrCodeUrl: null, expiresAt: null };
+    try {
+      pixData = await createOrder({
+        amountCents,
+        recipientId,
+        description:      `Saldo restante — ${booking.court.name} (${booking.date} ${booking.start_hour}–${booking.end_hour})`,
+        customerName:     booking.client_name,
+        customerEmail:    req.user?.email || 'cliente@arenaflow.app',
+        customerDocument: '',
+        customerPhone:    booking.client_phone || '',
+      });
+    } catch (pixErr) {
+      console.error('[BOOKINGS/PAY_BALANCE] Erro ao gerar PIX:', pixErr.message);
+      return res.status(502).json({ error: 'Erro ao gerar PIX do saldo. Tente novamente.' });
+    }
+
+    // Atualiza a reserva com os novos dados do PIX do saldo
+    await prisma.booking.update({
+      where: { id: booking.id },
+      data: {
+        pagarme_order_id:  pixData.orderId  || booking.pagarme_order_id,
+        pagarme_charge_id: pixData.chargeId || booking.pagarme_charge_id,
+        pix_qr_code:       pixData.qrCode    || null,
+        pix_qr_code_url:   pixData.qrCodeUrl || null,
+        pix_expires_at:    pixData.expiresAt ? new Date(pixData.expiresAt) : null,
+        updated_at:        new Date(),
+      },
+    });
+
+    console.log(`[BOOKINGS/PAY_BALANCE] ${booking.id} → PIX saldo R$${(amountCents / 100).toFixed(2)} gerado | charge=${pixData.chargeId}`);
+
+    return res.json({
+      remaining_amount:   remainingReais,
+      pix_qr_code:        pixData.qrCode,
+      pix_qr_code_url:    pixData.qrCodeUrl,
+      pix_expires_at:     pixData.expiresAt,
+      pagarme_order_id:   pixData.orderId,
+      pagarme_charge_id:  pixData.chargeId,
+    });
+
+  } catch (err) {
+    console.error('[BOOKINGS/PAY_BALANCE]', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+module.exports = { create, getById, getMyBookings, simulatePayment, getAvailability, getCancelPreview, cancel, payBalance };
