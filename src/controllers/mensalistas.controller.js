@@ -283,4 +283,33 @@ async function adminInativar(req, res) {
   }
 }
 
-module.exports = { create, listMe, getOne, cancel, adminList, adminInativar };
+/**
+ * GET /api/mensalistas/slots?court_id=X&day_of_week=Y
+ * Público — retorna os intervalos bloqueados por mensalistas ATIVOS
+ * para uma quadra + dia da semana específicos.
+ * Usado pelo app cliente para desabilitar horários na tela de seleção.
+ */
+async function slots(req, res) {
+  const { court_id, day_of_week } = req.query;
+  if (!court_id || day_of_week === undefined) {
+    return res.status(400).json({ error: 'court_id e day_of_week são obrigatórios' });
+  }
+
+  const dow = parseInt(day_of_week);
+  if (isNaN(dow) || dow < 0 || dow > 6) {
+    return res.status(400).json({ error: 'day_of_week deve ser entre 0 e 6' });
+  }
+
+  try {
+    const blocked = await prisma.mensalista.findMany({
+      where:  { court_id, day_of_week: dow, status: 'ATIVO' },
+      select: { start_hour: true, end_hour: true },
+    });
+    return res.json({ slots: blocked });
+  } catch (err) {
+    console.error('[MENSALISTA] slots:', err);
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+module.exports = { create, listMe, getOne, cancel, adminList, adminInativar, slots };

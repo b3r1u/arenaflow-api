@@ -1,10 +1,13 @@
 const { Router } = require('express');
 const { authenticateClient } = require('../middlewares/auth.middleware');
 const {
-  create, listMe, getOne, cancel,
+  create, listMe, getOne, cancel, slots,
 } = require('../controllers/mensalistas.controller');
 
 const router = Router();
+
+// Rota pública (sem auth) — slots bloqueados por mensalistas
+router.get('/slots', slots);
 
 // Rotas do cliente
 router.post('/',        authenticateClient, create);    // criar mensalista
