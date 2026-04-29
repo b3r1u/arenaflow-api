@@ -2,11 +2,12 @@ const prisma = require('../lib/prisma');
 const { z }  = require('zod');
 
 const CourtSchema = z.object({
-  name:        z.string().min(1, 'Nome obrigatório'),
-  sport_type:  z.enum(['futevôlei', 'vôlei', 'beach tennis', 'ambos']),
-  hourly_rate: z.number().positive('Valor por hora deve ser maior que zero'),
-  description: z.string().optional(),
-  status:      z.enum(['DISPONIVEL', 'BLOQUEADA']).optional().default('DISPONIVEL'),
+  name:             z.string().min(1, 'Nome obrigatório'),
+  sport_type:       z.enum(['futevôlei', 'vôlei', 'beach tennis', 'ambos']),
+  hourly_rate:      z.number().positive('Valor por hora deve ser maior que zero'),
+  mensalista_rate:  z.number().positive('Valor mensalista deve ser maior que zero').nullable().optional(),
+  description:      z.string().optional(),
+  status:           z.enum(['DISPONIVEL', 'BLOQUEADA']).optional().default('DISPONIVEL'),
 });
 
 // ─── Helper: garante que a quadra pertence ao estabelecimento do admin ────────
@@ -97,6 +98,7 @@ async function create(req, res) {
         name:             parsed.data.name,
         sport_type:       parsed.data.sport_type,
         hourly_rate:      parsed.data.hourly_rate,
+        mensalista_rate:  parsed.data.mensalista_rate ?? null,
         description:      parsed.data.description,
         status:           parsed.data.status,
       },

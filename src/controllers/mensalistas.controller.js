@@ -61,9 +61,10 @@ async function create(req, res) {
       return res.status(409).json({ error: 'Já existe um mensalista ativo neste horário' });
     }
 
-    // 3. Calcula valor (mesmo hourly_rate da quadra)
+    // 3. Calcula valor — usa mensalista_rate se configurado, senão hourly_rate
+    const rate          = court.mensalista_rate ?? court.hourly_rate;
     const durationHours = parseInt(end_hour) - parseInt(start_hour);
-    const totalReais    = durationHours * court.hourly_rate;
+    const totalReais    = durationHours * rate;
     const amountCents   = Math.round(totalReais * 100);
 
     const dayName = DAY_NAMES[day_of_week] || day_of_week;
@@ -300,9 +301,10 @@ async function renovar(req, res) {
       return res.status(404).json({ error: 'Mensalista não encontrado ou não elegível para renovação' });
     }
 
-    // Calcula valor igual à criação
+    // Calcula valor — usa mensalista_rate se configurado, senão hourly_rate
+    const rate          = mensalista.court.mensalista_rate ?? mensalista.court.hourly_rate;
     const durationHours = parseInt(mensalista.end_hour) - parseInt(mensalista.start_hour);
-    const totalReais    = durationHours * mensalista.court.hourly_rate;
+    const totalReais    = durationHours * rate;
     const amountCents   = Math.round(totalReais * 100);
 
     const dayName = DAY_NAMES[mensalista.day_of_week];

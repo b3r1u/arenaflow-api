@@ -100,13 +100,14 @@ function mapToArena(est) {
 
 function mapToCourt(court) {
   return {
-    id:          court.id,
-    arena_id:    court.establishment_id,
-    name:        court.name,
-    sport_type:  court.sport_type,
-    status:      court.status === 'DISPONIVEL' ? 'disponível' : 'bloqueada',
-    hourly_rate: court.hourly_rate,
-    description: court.description || '',
+    id:               court.id,
+    arena_id:         court.establishment_id,
+    name:             court.name,
+    sport_type:       court.sport_type,
+    status:           court.status === 'DISPONIVEL' ? 'disponível' : 'bloqueada',
+    hourly_rate:      court.hourly_rate,
+    mensalista_rate:  court.mensalista_rate ?? null,
+    description:      court.description || '',
   };
 }
 

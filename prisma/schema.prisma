@@ -177,6 +177,7 @@ model Court {
   sport_type       String        // futevôlei | vôlei | beach tennis | ambos
   status           CourtStatus   @default(DISPONIVEL)
   hourly_rate      Float
+  mensalista_rate  Float?   // se null → usa hourly_rate como fallback
   description      String?
   active           Boolean       @default(true)
   bookings         Booking[]
