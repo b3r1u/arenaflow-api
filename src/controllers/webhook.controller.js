@@ -192,15 +192,14 @@ async function pagarmeWebhook(req, res) {
       });
 
       if (booking) {
-        // Idempotência: booking já deve estar CANCELADO (marcado no cancel endpoint após cancelCharge).
-        // Este webhook serve como confirmação assíncrona — atualiza apenas se necessário.
-        if (booking.payment_status !== 'CANCELADO') {
+        // Confirma o estorno: CANCELADO → ESTORNADO (distinção semântica importante)
+        if (booking.payment_status !== 'ESTORNADO') {
           await prisma.booking.update({
             where: { id: booking.id },
-            data:  { payment_status: 'CANCELADO', updated_at: new Date() },
+            data:  { payment_status: 'ESTORNADO', updated_at: new Date() },
           });
         }
-        console.log(`[WEBHOOK] charge.refunded → booking ${booking.id} estorno confirmado (representado como CANCELADO no schema atual)`);
+        console.log(`[WEBHOOK] charge.refunded → booking ${booking.id} → ESTORNADO`);
         return;
       }
 
@@ -222,13 +221,11 @@ async function pagarmeWebhook(req, res) {
       });
 
       if (booking) {
-        // SUGESTÃO: usar status CHARGEDBACK para distinguir de CANCELADO normal.
-        // Por ora usa CANCELADO — os dois fluxos têm semânticas distintas.
         await prisma.booking.update({
           where: { id: booking.id },
-          data:  { payment_status: 'CANCELADO', updated_at: new Date() },
+          data:  { payment_status: 'CHARGEDBACK', updated_at: new Date() },
         });
-        console.log(`[WEBHOOK] charge.chargedback → booking ${booking.id} → CANCELADO (chargeback — NÃO confundir com refund)`);
+        console.log(`[WEBHOOK] charge.chargedback → booking ${booking.id} → CHARGEDBACK`);
         return;
       }
 
@@ -239,8 +236,11 @@ async function pagarmeWebhook(req, res) {
       });
 
       if (split) {
-        // SUGESTÃO: adicionar status CHARGEDBACK ao enum SplitStatus.
-        console.log(`[WEBHOOK] charge.chargedback → split ${split.id} | booking ${split.group.booking_id} (sem status CHARGEDBACK no schema — apenas logado)`);
+        await prisma.bookingPaymentSplit.update({
+          where: { id: split.id },
+          data:  { status: 'CHARGEDBACK', updated_at: new Date() },
+        });
+        console.log(`[WEBHOOK] charge.chargedback → split ${split.id} → CHARGEDBACK`);
         return;
       }
 

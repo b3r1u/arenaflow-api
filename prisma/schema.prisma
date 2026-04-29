@@ -214,6 +214,7 @@ model Booking {
   pix_qr_code_url   String?
   pix_expires_at    DateTime?
   payment_group     BookingPaymentGroup?
+  canceled_at       DateTime?            // preenchido quando status = CANCELADO | ESTORNADO | CHARGEDBACK
   created_at        DateTime             @default(now())
   updated_at        DateTime             @updatedAt
 }
@@ -223,7 +224,9 @@ enum BookingPaymentStatus {
   PARCIAL           // pelo menos uma cota paga (split)
   SINAL_PAGO        // 50% pago, restante na arena
   PAGO              // 100% pago
-  CANCELADO
+  CANCELADO         // cancelado sem pagamento real
+  ESTORNADO         // cancelado com estorno confirmado pelo Pagar.me
+  CHARGEDBACK       // disputa iniciada pelo banco/portador do cartão
 }
 
 // ─── Grupo de Pagamento ───────────────────────────────────────────────────────
@@ -273,6 +276,7 @@ enum SplitStatus {
   PAGO
   EXPIRADO
   ESTORNADO
+  CHARGEDBACK
 }
 
 // ─── Avaliação de Arena ───────────────────────────────────────────────────────

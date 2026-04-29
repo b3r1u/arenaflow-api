@@ -504,10 +504,12 @@ async function cancel(req, res) {
     }
 
     // ── Atualiza banco somente aqui — após estorno bem-sucedido (ou sem pagamento) ──
-    // SUGESTÃO: usar status ESTORNADO no enum BookingPaymentStatus após confirmação via charge.refunded.
+    // Se houve estorno na Pagar.me → CANCELADO (aguarda confirmação via charge.refunded → ESTORNADO)
+    // Se não houve pagamento real   → CANCELADO
+    const canceledAt = new Date();
     await prisma.booking.update({
       where: { id: booking.id },
-      data:  { payment_status: 'CANCELADO', updated_at: new Date() },
+      data:  { payment_status: 'CANCELADO', canceled_at: canceledAt, updated_at: canceledAt },
     });
 
     const refundAmountCents = Math.round(info.refund_amount * 100);
