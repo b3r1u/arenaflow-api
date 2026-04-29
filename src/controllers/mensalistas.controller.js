@@ -33,7 +33,7 @@ async function hasConflict(courtId, dayOfWeek, startHour, endHour, excludeId = n
  * Body: { court_id, client_name, client_phone?, day_of_week, start_hour, end_hour }
  */
 async function create(req, res) {
-  const { court_id, client_name, client_phone, day_of_week, start_hour, end_hour } = req.body;
+  const { court_id, client_name, client_phone, client_document, day_of_week, start_hour, end_hour } = req.body;
 
   if (!court_id || !client_name || day_of_week === undefined || !start_hour || !end_hour) {
     return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
@@ -80,7 +80,7 @@ async function create(req, res) {
         description,
         customerName:     client_name,
         customerEmail:    `${req.user.firebase_uid}@arenaflow.app`,
-        customerDocument: '00000000000', // CPF fictício (cliente não informa CPF aqui)
+        customerDocument: client_document || '', // CPF do perfil do usuário; fallback para placeholder válido
         customerPhone:    client_phone || '',
       });
       pixData = {
@@ -132,7 +132,9 @@ async function listMe(req, res) {
       include: {
         court: {
           select: {
-            name:          true,
+            name:            true,
+            hourly_rate:     true,
+            mensalista_rate: true,
             establishment: { select: { name: true, logo_color: true, logo_initials: true } },
           },
         },
@@ -319,7 +321,7 @@ async function renovar(req, res) {
         description,
         customerName:     mensalista.client_name,
         customerEmail:    `${req.user.firebase_uid}@arenaflow.app`,
-        customerDocument: '00000000000',
+        customerDocument: '',
         customerPhone:    mensalista.client_phone || '',
       });
       pixData = {
@@ -380,4 +382,71 @@ async function slots(req, res) {
   }
 }
 
-module.exports = { create, listMe, getOne, cancel, renovar, adminList, adminInativar, slots };
+/**
+ * POST /api/mensalistas/:id/reemitir-pix
+ * Regenera o PIX para um mensalista ainda PENDENTE (QR expirado ou nunca gerado).
+ * Só funciona se payment_status === 'PENDENTE'.
+ */
+async function reemitirPix(req, res) {
+  try {
+    const mensalista = await prisma.mensalista.findFirst({
+      where:   { id: req.params.id, user_uid: req.user.firebase_uid, payment_status: 'PENDENTE' },
+      include: { court: { include: { establishment: { include: { financial: true } } } } },
+    });
+    if (!mensalista) {
+      return res.status(404).json({ error: 'Mensalista não encontrado ou já não está pendente' });
+    }
+
+    const rate          = mensalista.court.mensalista_rate ?? mensalista.court.hourly_rate;
+    const durationHours = parseInt(mensalista.end_hour) - parseInt(mensalista.start_hour);
+    const amountCents   = Math.round(durationHours * rate * 100);
+
+    const dayName     = DAY_NAMES[mensalista.day_of_week];
+    const description = `Mensalista ${dayName} ${mensalista.start_hour}-${mensalista.end_hour} | ${mensalista.court.establishment.name}`;
+    const recipientId = mensalista.court.establishment.financial?.pagarme_recipient_id || null;
+
+    let pixData = {};
+    try {
+      const order = await createOrder({
+        amountCents,
+        recipientId,
+        description,
+        customerName:     mensalista.client_name,
+        customerEmail:    `${req.user.firebase_uid}@arenaflow.app`,
+        customerDocument: '',
+        customerPhone:    mensalista.client_phone || '',
+      });
+      pixData = {
+        pagarme_order_id:  order.orderId,
+        pagarme_charge_id: order.chargeId,
+        pix_qr_code:       order.qrCode,
+        pix_qr_code_url:   order.qrCodeUrl,
+        pix_expires_at:    order.expiresAt ? new Date(order.expiresAt) : null,
+      };
+    } catch (pixErr) {
+      return res.status(502).json({ error: 'Erro ao gerar PIX: ' + pixErr.message });
+    }
+
+    const updated = await prisma.mensalista.update({
+      where:   { id: mensalista.id },
+      data:    { ...pixData, updated_at: new Date() },
+      include: {
+        court: {
+          select: {
+            name:            true,
+            hourly_rate:     true,
+            mensalista_rate: true,
+            establishment:   { select: { name: true, logo_color: true, logo_initials: true } },
+          },
+        },
+      },
+    });
+
+    return res.json(updated);
+  } catch (err) {
+    console.error('[MENSALISTA] reemitirPix:', err);
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+module.exports = { create, listMe, getOne, cancel, renovar, reemitirPix, adminList, adminInativar, slots };

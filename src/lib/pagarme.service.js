@@ -209,6 +209,14 @@ async function createOrder({
         number:       '999999999',
       };
 
+  // CPF sandbox válido usado como fallback quando o cliente não informa documento.
+  // O gateway Pagar.me rejeita CPFs inválidos (ex: 00000000000) com action_forbidden.
+  const CPF_PLACEHOLDER = '52998224725';
+  const rawDoc = (customerDocument || '').replace(/\D/g, '');
+  // Considera inválido: vazio, todo igual (00000.../ 11111...) ou tamanho != 11
+  const isInvalidCpf = !rawDoc || rawDoc.length !== 11 || /^(\d)\1+$/.test(rawDoc);
+  const customerDoc  = isInvalidCpf ? CPF_PLACEHOLDER : rawDoc;
+
   const payload = {
     items: [{
       amount:      amountCents,
@@ -218,7 +226,7 @@ async function createOrder({
     customer: {
       name:     customerName     || 'Cliente',
       email:    customerEmail    || 'cliente@arenaflow.app',
-      document: (customerDocument || '').replace(/\D/g, ''),
+      document: customerDoc,
       type:     'individual',
       phones: {
         mobile_phone: mobilePhone,
