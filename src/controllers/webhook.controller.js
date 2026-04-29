@@ -221,6 +221,22 @@ async function pagarmeWebhook(req, res) {
         where: { pagarme_charge_id: chargeId },
       });
 
+      // Verifica se é um mensalista
+      const mensalistaRefund = await prisma.mensalista.findFirst({
+        where: { pagarme_charge_id: chargeId },
+      });
+
+      if (mensalistaRefund) {
+        if (mensalistaRefund.payment_status !== 'CANCELADO') {
+          await prisma.mensalista.update({
+            where: { id: mensalistaRefund.id },
+            data:  { payment_status: 'CANCELADO', status: 'INATIVO', updated_at: new Date() },
+          });
+        }
+        console.log(`[WEBHOOK] charge.refunded → mensalista ${mensalistaRefund.id} → CANCELADO / INATIVO`);
+        return;
+      }
+
       if (booking) {
         // Confirma o estorno: CANCELADO → ESTORNADO (distinção semântica importante)
         if (booking.payment_status !== 'ESTORNADO') {
@@ -244,6 +260,20 @@ async function pagarmeWebhook(req, res) {
     if (type === 'charge.chargedback') {
       const chargeId = event?.data?.id;
       if (!chargeId) return;
+
+      // Verifica se é um mensalista
+      const mensalistaChargeback = await prisma.mensalista.findFirst({
+        where: { pagarme_charge_id: chargeId },
+      });
+
+      if (mensalistaChargeback) {
+        await prisma.mensalista.update({
+          where: { id: mensalistaChargeback.id },
+          data:  { payment_status: 'CANCELADO', status: 'INATIVO', updated_at: new Date() },
+        });
+        console.log(`[WEBHOOK] charge.chargedback → mensalista ${mensalistaChargeback.id} → CANCELADO / INATIVO`);
+        return;
+      }
 
       // Tenta encontrar booking direto
       const booking = await prisma.booking.findFirst({
