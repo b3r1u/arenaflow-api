@@ -78,7 +78,7 @@ async function create(req, res) {
         recipientId,
         description,
         customerName:     client_name,
-        customerEmail:    `${req.user.uid}@arenaflow.app`,
+        customerEmail:    `${req.user.firebase_uid}@arenaflow.app`,
         customerDocument: '00000000000', // CPF fictício (cliente não informa CPF aqui)
         customerPhone:    client_phone || '',
       });
@@ -98,7 +98,7 @@ async function create(req, res) {
     const mensalista = await prisma.mensalista.create({
       data: {
         court_id,
-        user_uid:       req.user.uid,
+        user_uid:       req.user.firebase_uid,
         client_name,
         client_phone:   client_phone || null,
         day_of_week,
@@ -127,7 +127,7 @@ async function create(req, res) {
 async function listMe(req, res) {
   try {
     const mensalistas = await prisma.mensalista.findMany({
-      where:   { user_uid: req.user.uid },
+      where:   { user_uid: req.user.firebase_uid },
       include: {
         court: {
           select: {
@@ -153,7 +153,7 @@ async function listMe(req, res) {
 async function getOne(req, res) {
   try {
     const mensalista = await prisma.mensalista.findFirst({
-      where:   { id: req.params.id, user_uid: req.user.uid },
+      where:   { id: req.params.id, user_uid: req.user.firebase_uid },
       include: {
         court: {
           select: {
@@ -181,7 +181,7 @@ async function getOne(req, res) {
 async function cancel(req, res) {
   try {
     const mensalista = await prisma.mensalista.findFirst({
-      where: { id: req.params.id, user_uid: req.user.uid },
+      where: { id: req.params.id, user_uid: req.user.firebase_uid },
     });
     if (!mensalista) return res.status(404).json({ error: 'Mensalista não encontrado' });
 
@@ -222,7 +222,7 @@ async function adminList(req, res) {
   try {
     // Busca o estabelecimento do admin logado
     const establishment = await prisma.establishment.findFirst({
-      where: { owner_id: req.user.dbId },
+      where: { owner_id: req.user.id },
     });
     if (!establishment) return res.status(404).json({ error: 'Estabelecimento não encontrado' });
 
@@ -254,7 +254,7 @@ async function adminList(req, res) {
 async function adminInativar(req, res) {
   try {
     const establishment = await prisma.establishment.findFirst({
-      where: { owner_id: req.user.dbId },
+      where: { owner_id: req.user.id },
     });
     if (!establishment) return res.status(404).json({ error: 'Estabelecimento não encontrado' });
 
