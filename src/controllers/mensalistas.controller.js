@@ -284,6 +284,72 @@ async function adminInativar(req, res) {
 }
 
 /**
+ * POST /api/mensalistas/:id/renovar
+ * Cliente renova o próprio mensalista ATIVO gerando um novo PIX.
+ * O valid_until será estendido a partir do valid_until atual (ou de agora,
+ * se já expirou) quando o webhook charge.paid confirmar o pagamento.
+ */
+async function renovar(req, res) {
+  try {
+    const mensalista = await prisma.mensalista.findFirst({
+      where:   { id: req.params.id, user_uid: req.user.firebase_uid, status: 'ATIVO' },
+      include: { court: { include: { establishment: { include: { financial: true } } } } },
+    });
+
+    if (!mensalista) {
+      return res.status(404).json({ error: 'Mensalista não encontrado ou não elegível para renovação' });
+    }
+
+    // Calcula valor igual à criação
+    const durationHours = parseInt(mensalista.end_hour) - parseInt(mensalista.start_hour);
+    const totalReais    = durationHours * mensalista.court.hourly_rate;
+    const amountCents   = Math.round(totalReais * 100);
+
+    const dayName = DAY_NAMES[mensalista.day_of_week];
+    const description = `Renovação Mensalista ${dayName} ${mensalista.start_hour}-${mensalista.end_hour} | ${mensalista.court.establishment.name}`;
+
+    const recipientId = mensalista.court.establishment.financial?.pagarme_recipient_id || null;
+    let pixData = {};
+    try {
+      const order = await createOrder({
+        amountCents,
+        recipientId,
+        description,
+        customerName:     mensalista.client_name,
+        customerEmail:    `${req.user.firebase_uid}@arenaflow.app`,
+        customerDocument: '00000000000',
+        customerPhone:    mensalista.client_phone || '',
+      });
+      pixData = {
+        pagarme_order_id:  order.orderId,
+        pagarme_charge_id: order.chargeId,
+        pix_qr_code:       order.qrCode,
+        pix_qr_code_url:   order.qrCodeUrl,
+        pix_expires_at:    order.expiresAt ? new Date(order.expiresAt) : null,
+      };
+    } catch (pixErr) {
+      console.error('[MENSALISTA] renovar - erro PIX:', pixErr.message);
+      return res.status(502).json({ error: 'Erro ao gerar PIX: ' + pixErr.message });
+    }
+
+    // Atualiza o registro com o novo PIX — mantém status ATIVO, volta payment_status a PENDENTE
+    const updated = await prisma.mensalista.update({
+      where: { id: mensalista.id },
+      data:  { payment_status: 'PENDENTE', ...pixData, updated_at: new Date() },
+      include: {
+        court: { select: { name: true, establishment: { select: { name: true, logo_color: true, logo_initials: true } } } },
+      },
+    });
+
+    console.log(`[MENSALISTA] renovar: novo PIX gerado para ${mensalista.id}`);
+    return res.json(updated);
+  } catch (err) {
+    console.error('[MENSALISTA] renovar:', err);
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+/**
  * GET /api/mensalistas/slots?court_id=X&day_of_week=Y
  * Público — retorna os intervalos bloqueados por mensalistas ATIVOS
  * para uma quadra + dia da semana específicos.
@@ -312,4 +378,4 @@ async function slots(req, res) {
   }
 }
 
-module.exports = { create, listMe, getOne, cancel, adminList, adminInativar, slots };
+module.exports = { create, listMe, getOne, cancel, renovar, adminList, adminInativar, slots };

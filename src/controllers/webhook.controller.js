@@ -42,9 +42,13 @@ async function pagarmeWebhook(req, res) {
             return;
           }
 
-          // Calcula valid_until = 1 mês a partir de agora
           const now = new Date();
-          const validUntil = new Date(now);
+          // Renovação: extende de valid_until atual se ainda está no futuro.
+          // Primeiro pagamento: valid_until é null → parte de agora.
+          const baseDate = mensalista.valid_until && new Date(mensalista.valid_until) > now
+            ? new Date(mensalista.valid_until)
+            : now;
+          const validUntil = new Date(baseDate);
           validUntil.setMonth(validUntil.getMonth() + 1);
 
           await prisma.mensalista.update({
