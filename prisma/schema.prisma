@@ -180,6 +180,7 @@ model Court {
   description      String?
   active           Boolean       @default(true)
   bookings         Booking[]
+  mensalistas      Mensalista[]
   created_at       DateTime      @default(now())
   updated_at       DateTime      @updatedAt
 }
@@ -293,4 +294,42 @@ model Review {
   created_at       DateTime      @default(now())
 
   @@unique([user_id, booking_id])
+}
+
+// ─── Mensalista ───────────────────────────────────────────────────────────────
+model Mensalista {
+  id                String                   @id @default(uuid())
+  court_id          String
+  court             Court                    @relation(fields: [court_id], references: [id])
+  user_uid          String                   // Firebase UID do cliente
+  client_name       String
+  client_phone      String?
+  day_of_week       Int                      // 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb
+  start_hour        String                   // HH:00
+  end_hour          String                   // HH:00
+  payment_date      DateTime?                // data em que o pagamento foi confirmado
+  valid_until       DateTime?                // payment_date + 1 mês
+  payment_status    MensalistaPaymentStatus  @default(PENDENTE)
+  status            MensalistaStatus         @default(INATIVO)
+  pagarme_order_id  String?
+  pagarme_charge_id String?
+  pix_qr_code       String?                  // URL da imagem do QR code
+  pix_qr_code_url   String?                  // alias (compatibilidade com fluxo booking)
+  pix_expires_at    DateTime?
+  created_at        DateTime                 @default(now())
+  updated_at        DateTime                 @updatedAt
+
+  @@index([court_id, day_of_week, status])   // índice para consulta de disponibilidade
+}
+
+enum MensalistaStatus {
+  ATIVO     // pagamento confirmado e dentro da vigência
+  INATIVO   // cancelado manualmente pelo admin ou cliente
+  EXPIRADO  // valid_until ultrapassado
+}
+
+enum MensalistaPaymentStatus {
+  PENDENTE   // PIX gerado, aguardando pagamento
+  PAGO       // pagamento confirmado pela Pagar.me
+  CANCELADO  // cancelado/estornado
 }
