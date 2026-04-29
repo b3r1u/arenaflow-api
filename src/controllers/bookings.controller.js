@@ -419,6 +419,42 @@ async function cancel(req, res) {
         return res.status(502).json({ ok: false, error: 'Falha ao solicitar estorno na Pagar.me' });
       }
 
+      // ── Fallback: nenhum split estava PAGO mas o booking tem charge direta ──
+      // Isso acontece quando o pagamento foi feito diretamente (PIX do booking)
+      // mesmo que haja um payment_group sem splits quitados.
+      if (splitsPagas.length === 0 && booking.pagarme_charge_id && booking.paid_amount > 0) {
+        const isPaid = ['PAGO', 'SINAL_PAGO', 'PARCIAL'].includes(originalStatus);
+
+        if (isPaid) {
+          let chargeStatus = null;
+          try {
+            const charge = await getCharge(booking.pagarme_charge_id);
+            chargeStatus = charge.status;
+            console.log(`[BOOKINGS/CANCEL] fallback direto — charge ${booking.pagarme_charge_id} status="${chargeStatus}"`);
+          } catch (err) {
+            console.warn(`[BOOKINGS/CANCEL] falha ao consultar charge ${booking.pagarme_charge_id}:`, err.message);
+          }
+
+          if (chargeStatus === 'refunded' || chargeStatus === 'chargedback') {
+            console.log(`[BOOKINGS/CANCEL] charge já "${chargeStatus}" — duplo estorno evitado`);
+          } else if (chargeStatus && chargeStatus !== 'paid') {
+            console.log(`[BOOKINGS/CANCEL] charge "${chargeStatus}" (não pago) — estorno ignorado`);
+          } else {
+            const refundCents = Math.round(info.refund_amount * 100);
+            console.log(`[BOOKINGS/CANCEL] fallback direto — estornando charge=${booking.pagarme_charge_id} | amountCents=${refundCents}`);
+            try {
+              await cancelCharge(booking.pagarme_charge_id, refundCents);
+              console.log(`[BOOKINGS/CANCEL] charge ${booking.pagarme_charge_id} estornada (fallback) — R$${(refundCents / 100).toFixed(2)}`);
+              pagarmeRefundRequested = true;
+              refundedChargeId       = booking.pagarme_charge_id;
+            } catch (refundErr) {
+              console.error(`[BOOKINGS/CANCEL] falha ao estornar charge ${booking.pagarme_charge_id} (fallback):`, refundErr.message);
+              return res.status(502).json({ ok: false, error: 'Falha ao solicitar estorno na Pagar.me' });
+            }
+          }
+        }
+      }
+
     // ── Fluxo direto: estorna a charge individual da reserva ─────────────────
     } else if (booking.pagarme_charge_id && booking.paid_amount > 0) {
 

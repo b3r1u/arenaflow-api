@@ -214,28 +214,34 @@ async function getPaymentGroup(req, res) {
           });
           split.status = 'PAGO'; // atualiza objeto em memória para resposta
 
-          // Recalcula grupo
-          const newPaid   = group.paid_amount + split.amount;
-          const groupPago = newPaid >= group.total_amount;
-          const halfPago  = newPaid >= group.total_amount * 0.5;
+          // Recalcula grupo — usa valor absoluto (não incremental) p/ evitar race condition com webhook
+          const newPaid   = group.total_amount; // para DEPOSIT sempre é o valor total do depósito
+          const realPaid  = group.payment_type === 'DEPOSIT'
+            ? group.total_amount                              // depósito fixo — sempre o total do grupo
+            : group.paid_amount + split.amount;              // SPLIT — acumula
+          const groupPago = realPaid >= group.total_amount;
+          const halfPago  = realPaid >= group.total_amount * 0.5;
           await prisma.bookingPaymentGroup.update({
             where: { id: group.id },
             data: {
-              paid_amount: newPaid,
+              paid_amount: realPaid,
               status:      groupPago ? 'PAGO' : halfPago ? 'PARCIAL' : 'PENDENTE',
               updated_at:  new Date(),
             },
           });
-          group.paid_amount = newPaid;
+          group.paid_amount = realPaid;
           group.status      = groupPago ? 'PAGO' : halfPago ? 'PARCIAL' : 'PENDENTE';
 
-          // Atualiza booking: < 50% → PENDENTE | >= 50% → PARCIAL | 100% → PAGO
-          const bookingStatus = groupPago ? 'PAGO' : halfPago ? 'PARCIAL' : 'PENDENTE';
+          // Atualiza booking — DEPOSIT sempre vira SINAL_PAGO; SPLIT usa regra de porcentagem
+          const bookingStatus = group.payment_type === 'DEPOSIT'
+            ? 'SINAL_PAGO'
+            : (groupPago ? 'PAGO' : halfPago ? 'PARCIAL' : 'PENDENTE');
+          const bookingPaidAmount = group.total_amount / 100; // centavos → reais (para DEPOSIT = metade do total da reserva)
           await prisma.booking.update({
             where: { id: bookingId },
             data: {
               payment_status: bookingStatus,
-              paid_amount:    newPaid / 100,
+              paid_amount:    bookingPaidAmount,
               updated_at:     new Date(),
             },
           });

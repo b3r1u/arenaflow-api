@@ -41,15 +41,26 @@ async function pagarmeWebhook(req, res) {
             console.log('[WEBHOOK] charge.paid → booking já PAGO, ignorando:', booking.id);
             return;
           }
+
+          // Fluxo de quitação do saldo (SINAL_PAGO → PAGO): charge nova gerada pelo pay-balance
+          // Fluxo de entrada 50%: primeira charge, seta SINAL_PAGO com metade do total
+          const isSaldoQuitar = booking.payment_status === 'SINAL_PAGO';
+          const newStatus     = isSaldoQuitar ? 'PAGO' : (booking.payment_option === '50' ? 'SINAL_PAGO' : 'PAGO');
+          const newPaidAmount = isSaldoQuitar
+            ? Number(booking.total_amount)
+            : (booking.payment_option === '50'
+                ? Number(booking.total_amount) / 2
+                : Number(booking.total_amount));
+
           await prisma.booking.update({
             where: { id: booking.id },
             data: {
-              payment_status: 'PAGO',
-              paid_amount:    Number(booking.total_amount),
+              payment_status: newStatus,
+              paid_amount:    newPaidAmount,
               updated_at:     new Date(),
             },
           });
-          console.log(`[WEBHOOK] charge.paid → booking ${booking.id} (saldo quitado) → PAGO`);
+          console.log(`[WEBHOOK] charge.paid → booking ${booking.id} (payment_option=${booking.payment_option}, era ${booking.payment_status}) → ${newStatus} | paid=R$${newPaidAmount}`);
           return;
         }
 
