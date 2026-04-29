@@ -79,18 +79,34 @@ async function create(req, res) {
     });
     if (!court) return res.status(404).json({ error: 'Quadra não encontrada' });
 
-    // 2. Verifica conflito de horário
+    // 2. Verifica conflito de horário (booking existente)
     const conflict = await prisma.booking.findFirst({
       where: {
         court_id,
         date,
-        payment_status: { not: 'CANCELADO' },
+        payment_status: { notIn: ['CANCELADO', 'ESTORNADO', 'CHARGEDBACK'] },
         OR: [
           { start_hour: { lt: end_hour }, end_hour: { gt: start_hour } },
         ],
       },
     });
     if (conflict) return res.status(409).json({ error: 'Horário indisponível' });
+
+    // 2b. Verifica conflito com mensalista ATIVO no mesmo dia da semana
+    const dateObj   = new Date(date + 'T00:00:00');
+    const dayOfWeek = dateObj.getDay(); // 0=Dom, 1=Seg, ..., 6=Sáb
+    const mensalistaConflict = await prisma.mensalista.findFirst({
+      where: {
+        court_id,
+        day_of_week: dayOfWeek,
+        status:      'ATIVO',
+        start_hour:  { lt: end_hour },
+        end_hour:    { gt: start_hour },
+      },
+    });
+    if (mensalistaConflict) {
+      return res.status(409).json({ error: 'Horário reservado para mensalista' });
+    }
 
     // 3. Calcula valores
     const durationHours = parseInt(end_hour) - parseInt(start_hour);
@@ -261,16 +277,36 @@ async function getAvailability(req, res) {
     return res.status(400).json({ error: 'Parâmetros obrigatórios: arena_id, court_id, date' });
   }
   try {
+    // Reservas avulsas
     const bookings = await prisma.booking.findMany({
       where: {
         arena_id,
         court_id,
         date,
-        payment_status: { not: 'CANCELADO' },
+        payment_status: { notIn: ['CANCELADO', 'ESTORNADO', 'CHARGEDBACK'] },
       },
       select: { start_hour: true, end_hour: true },
     });
-    return res.json({ slots: bookings });
+
+    // Slots bloqueados por mensalistas ATIVOS neste dia da semana
+    const dateObj   = new Date(date + 'T00:00:00');
+    const dayOfWeek = dateObj.getDay();
+    const mensalistas = await prisma.mensalista.findMany({
+      where: {
+        court_id,
+        day_of_week: dayOfWeek,
+        status:      'ATIVO',
+      },
+      select: { start_hour: true, end_hour: true },
+    });
+
+    // Une os dois e retorna
+    const slots = [
+      ...bookings,
+      ...mensalistas.map(m => ({ start_hour: m.start_hour, end_hour: m.end_hour, mensalista: true })),
+    ];
+
+    return res.json({ slots });
   } catch (err) {
     console.error('[getAvailability]', err.message);
     return res.status(500).json({ error: 'Erro ao buscar disponibilidade' });

@@ -31,6 +31,36 @@ async function pagarmeWebhook(req, res) {
       });
 
       if (!split) {
+        // ── Verifica se é um mensalista ──────────────────────────────────────
+        const mensalista = await prisma.mensalista.findFirst({
+          where: { pagarme_charge_id: chargeId },
+        });
+
+        if (mensalista) {
+          if (mensalista.payment_status === 'PAGO') {
+            console.log('[WEBHOOK] charge.paid → mensalista já PAGO, ignorando:', mensalista.id);
+            return;
+          }
+
+          // Calcula valid_until = 1 mês a partir de agora
+          const now = new Date();
+          const validUntil = new Date(now);
+          validUntil.setMonth(validUntil.getMonth() + 1);
+
+          await prisma.mensalista.update({
+            where: { id: mensalista.id },
+            data: {
+              payment_status: 'PAGO',
+              status:         'ATIVO',
+              payment_date:   now,
+              valid_until:    validUntil,
+              updated_at:     now,
+            },
+          });
+          console.log(`[WEBHOOK] charge.paid → mensalista ${mensalista.id} → PAGO / ATIVO até ${validUntil.toISOString()}`);
+          return;
+        }
+
         // Verifica se é um booking direto com este charge (ex: pagamento de saldo 50%→100%)
         const booking = await prisma.booking.findFirst({
           where: { pagarme_charge_id: chargeId },
