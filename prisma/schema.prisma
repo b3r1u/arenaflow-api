@@ -305,6 +305,7 @@ model Mensalista {
   user_uid          String                   // Firebase UID do cliente
   client_name       String
   client_phone      String?
+  group_name        String?                  // nome do grupo dado pelo cliente (ex: "Grupo da Manhã")
   day_of_week       Int                      // 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb
   start_hour        String                   // HH:00
   end_hour          String                   // HH:00

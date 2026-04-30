@@ -33,7 +33,7 @@ async function hasConflict(courtId, dayOfWeek, startHour, endHour, excludeId = n
  * Body: { court_id, client_name, client_phone?, day_of_week, start_hour, end_hour }
  */
 async function create(req, res) {
-  const { court_id, client_name, client_phone, client_document, day_of_week, start_hour, end_hour } = req.body;
+  const { court_id, client_name, client_phone, client_document, group_name, day_of_week, start_hour, end_hour } = req.body;
 
   if (!court_id || !client_name || day_of_week === undefined || !start_hour || !end_hour) {
     return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
@@ -102,6 +102,7 @@ async function create(req, res) {
         user_uid:       req.user.firebase_uid,
         client_name,
         client_phone:   client_phone || null,
+        group_name:     group_name   || null,
         day_of_week,
         start_hour,
         end_hour,
@@ -238,7 +239,7 @@ async function adminList(req, res) {
         ...(court_id  ? { court_id }  : {}),
       },
       include: {
-        court: { select: { name: true } },
+        court: { select: { name: true, hourly_rate: true, mensalista_rate: true } },
       },
       orderBy: [{ day_of_week: 'asc' }, { start_hour: 'asc' }, { client_name: 'asc' }],
     });
