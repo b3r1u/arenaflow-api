@@ -1,5 +1,30 @@
 const prisma = require('../lib/prisma');
 
+/** Calcula o valor total de um mensalista: taxa × duração × 4 semanas */
+function mensalistaAmount(m) {
+  const rate     = m.court.mensalista_rate ?? m.court.hourly_rate;
+  const duration = parseInt(m.end_hour) - parseInt(m.start_hour);
+  return duration * rate * 4;
+}
+
+/** Busca mensalistas PAGOS de uma quadra do estabelecimento em um intervalo de payment_date */
+async function findPaidMensalistas(establishmentId, gte, lte) {
+  return prisma.mensalista.findMany({
+    where: {
+      court:          { establishment_id: establishmentId },
+      payment_status: 'PAGO',
+      payment_date:   { gte, lte },
+    },
+    select: {
+      start_hour:   true,
+      end_hour:     true,
+      court_id:     true,
+      payment_date: true,
+      court: { select: { hourly_rate: true, mensalista_rate: true } },
+    },
+  });
+}
+
 /**
  * GET /api/dashboard/stats
  * Retorna métricas do dashboard para o estabelecimento autenticado.
@@ -58,10 +83,17 @@ async function getStats(req, res) {
       select: { paid_amount: true },
     });
 
-    const receitaHoje = paidTodayBookings
+    const receitaHojeBookings = paidTodayBookings
       .reduce((sum, b) => sum + Number(b.paid_amount), 0);
 
+    // Mensalistas pagos hoje
+    const mensalistasHoje    = await findPaidMensalistas(establishment.id, todayStart, todayEnd);
+    const receitaHoje        = receitaHojeBookings + mensalistasHoje.reduce((s, m) => s + mensalistaAmount(m), 0);
+
     // Reservas do mês
+    const firstOfMonthStart = new Date(`${firstOfMonth}T00:00:00.000${TZ_OFFSET}`);
+    const lastOfMonthEnd    = new Date(`${lastOfMonth}T23:59:59.999${TZ_OFFSET}`);
+
     const monthBookings = await prisma.booking.findMany({
       where: {
         ...whereEstablishment,
@@ -71,10 +103,14 @@ async function getStats(req, res) {
       select: { payment_status: true, paid_amount: true },
     });
 
-    const reservasMes   = monthBookings.length;
-    const receitaMensal = monthBookings
+    const reservasMes          = monthBookings.length;
+    const receitaMensalBookings = monthBookings
       .filter(b => b.payment_status === 'PAGO')
       .reduce((sum, b) => sum + Number(b.paid_amount), 0);
+
+    // Mensalistas pagos no mês
+    const mensalistasMes = await findPaidMensalistas(establishment.id, firstOfMonthStart, lastOfMonthEnd);
+    const receitaMensal  = receitaMensalBookings + mensalistasMes.reduce((s, m) => s + mensalistaAmount(m), 0);
 
     return res.json({
       reservasHoje,
@@ -123,7 +159,10 @@ async function getRevenue7Days(req, res) {
         select: { paid_amount: true },
       });
 
-      const revenue = bookings.reduce((sum, b) => sum + Number(b.paid_amount), 0);
+      const mensalistas = await findPaidMensalistas(establishment.id, dayStart, dayEnd);
+
+      const revenue = bookings.reduce((sum, b) => sum + Number(b.paid_amount), 0)
+                    + mensalistas.reduce((s, m) => s + mensalistaAmount(m), 0);
       const [year, month, day] = dateStr.split('-');
       result.push({ day: `${day}/${month}`, revenue });
     }
@@ -299,7 +338,11 @@ async function getReport(req, res) {
       select: { id: true },
     });
 
-    const totalRevenue   = paidBookings.reduce((s, b) => s + Number(b.paid_amount), 0);
+    // Mensalistas PAGOS no período
+    const paidMensalistas = await findPaidMensalistas(establishment.id, cutoffStart, todayEnd);
+    const mensalistasRevenue = paidMensalistas.reduce((s, m) => s + mensalistaAmount(m), 0);
+
+    const totalRevenue   = paidBookings.reduce((s, b) => s + Number(b.paid_amount), 0) + mensalistasRevenue;
     const avgDaily       = period > 0 ? totalRevenue / period : 0;
     const totalBookings  = allBookings.length;
     const pendingRevenue = pendingBookings.reduce((s, b) => s + Number(b.total_amount), 0);
@@ -314,10 +357,13 @@ async function getReport(req, res) {
       const dayStart = new Date(`${dateStr}T00:00:00.000${TZ_OFFSET}`);
       const dayEnd   = new Date(`${dateStr}T23:59:59.999${TZ_OFFSET}`);
       const label    = `${dateStr.slice(8)}/${dateStr.slice(5, 7)}`;
-      const revenue  = paidBookings
+      const bookingRev = paidBookings
         .filter(b => new Date(b.updated_at) >= dayStart && new Date(b.updated_at) <= dayEnd)
         .reduce((s, b) => s + Number(b.paid_amount), 0);
-      dailyData.push({ label, revenue });
+      const mensalistaRev = paidMensalistas
+        .filter(m => m.payment_date && new Date(m.payment_date) >= dayStart && new Date(m.payment_date) <= dayEnd)
+        .reduce((s, m) => s + mensalistaAmount(m), 0);
+      dailyData.push({ label, revenue: bookingRev + mensalistaRev });
     }
 
     return res.json({ totalRevenue, avgDaily, totalBookings, pendingRevenue, dailyData });
@@ -357,16 +403,22 @@ async function getCourtStats(req, res) {
       select: { court_id: true, duration_hours: true, paid_amount: true, payment_status: true },
     });
 
+    // Mensalistas PAGOS no período por quadra
+    const paidMensalistas = await findPaidMensalistas(establishment.id, cutoffStart, todayEnd);
+
     const stats = establishment.courts.map(court => {
       const cb      = bookings.filter(b => b.court_id === court.id);
       const hours   = cb.reduce((s, b) => s + (b.duration_hours || 0), 0);
-      const revenue = cb
+      const bookingRevenue = cb
         .filter(b => b.payment_status === 'PAGO')
         .reduce((s, b) => s + Number(b.paid_amount), 0);
+      const mensalistaRevenue = paidMensalistas
+        .filter(m => m.court_id === court.id)
+        .reduce((s, m) => s + mensalistaAmount(m), 0);
       return {
         name:    court.name,
         hours,
-        revenue,
+        revenue: bookingRevenue + mensalistaRevenue,
         rate: Math.min(100, Math.round((hours / maxHours) * 100)),
       };
     });
@@ -407,16 +459,26 @@ async function getPaymentStats(req, res) {
       select: { payment_status: true, paid_amount: true, total_amount: true },
     });
 
-    const total = bookings.length || 1;
+    // Mensalistas pagos no período (todos via PIX)
+    const cutoffDate2  = new Date(nowBrazil);
+    cutoffDate2.setDate(cutoffDate2.getDate() - period + 1);
+    const cutoffStart2 = new Date(`${cutoffDate2.toISOString().slice(0, 10)}T00:00:00.000${TZ_OFFSET}`);
+    const todayEnd2    = new Date(`${nowBrazil.toISOString().slice(0, 10)}T23:59:59.999${TZ_OFFSET}`);
+    const paidMensalistas = await findPaidMensalistas(establishment.id, cutoffStart2, todayEnd2);
+    const mensalistaTotal = paidMensalistas.reduce((s, m) => s + mensalistaAmount(m), 0);
+
+    const total = (bookings.length + paidMensalistas.length) || 1;
     const pix   = bookings.filter(b => b.payment_status === 'PAGO');
+    const pixCount = pix.length + paidMensalistas.length;
+    const pixTotal = pix.reduce((s, b) => s + Number(b.paid_amount), 0) + mensalistaTotal;
 
     return res.json([
       {
         label:   'Pix',
         color:   'hsl(152,69%,40%)',
-        count:   pix.length,
-        total:   pix.reduce((s, b) => s + Number(b.paid_amount), 0),
-        percent: Math.round((pix.length / total) * 100),
+        count:   pixCount,
+        total:   pixTotal,
+        percent: Math.round((pixCount / total) * 100),
       },
       { label: 'Cartão',        color: 'hsl(221,83%,53%)', count: 0, total: 0, percent: 0 },
       { label: 'Dinheiro',      color: 'hsl(36,95%,55%)',  count: 0, total: 0, percent: 0 },
