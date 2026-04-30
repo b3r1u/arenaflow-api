@@ -61,10 +61,10 @@ async function create(req, res) {
       return res.status(409).json({ error: 'Já existe um mensalista ativo neste horário' });
     }
 
-    // 3. Calcula valor — usa mensalista_rate se configurado, senão hourly_rate
+    // 3. Calcula valor — fórmula: valor_hora × horas × 4 semanas
     const rate          = court.mensalista_rate ?? court.hourly_rate;
     const durationHours = parseInt(end_hour) - parseInt(start_hour);
-    const totalReais    = durationHours * rate;
+    const totalReais    = durationHours * rate * 4;
     const amountCents   = Math.round(totalReais * 100);
 
     const dayName = DAY_NAMES[day_of_week] || day_of_week;
@@ -304,10 +304,10 @@ async function renovar(req, res) {
       return res.status(404).json({ error: 'Mensalista não encontrado ou não elegível para renovação' });
     }
 
-    // Calcula valor — usa mensalista_rate se configurado, senão hourly_rate
+    // Calcula valor — fórmula: valor_hora × horas × 4 semanas
     const rate          = mensalista.court.mensalista_rate ?? mensalista.court.hourly_rate;
     const durationHours = parseInt(mensalista.end_hour) - parseInt(mensalista.start_hour);
-    const totalReais    = durationHours * rate;
+    const totalReais    = durationHours * rate * 4;
     const amountCents   = Math.round(totalReais * 100);
 
     const dayName = DAY_NAMES[mensalista.day_of_week];
@@ -398,9 +398,10 @@ async function reemitirPix(req, res) {
       return res.status(404).json({ error: 'Mensalista não encontrado ou já não está pendente' });
     }
 
+    // Fórmula: valor_hora × horas × 4 semanas
     const rate          = mensalista.court.mensalista_rate ?? mensalista.court.hourly_rate;
     const durationHours = parseInt(mensalista.end_hour) - parseInt(mensalista.start_hour);
-    const amountCents   = Math.round(durationHours * rate * 100);
+    const amountCents   = Math.round(durationHours * rate * 4 * 100);
 
     const dayName     = DAY_NAMES[mensalista.day_of_week];
     const description = `Mensalista ${dayName} ${mensalista.start_hour}-${mensalista.end_hour} | ${mensalista.court.establishment.name}`;
