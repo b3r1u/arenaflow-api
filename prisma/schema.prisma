@@ -89,6 +89,7 @@ model Establishment {
 
   courts        Court[]
   reviews       Review[]
+  promotions    Promotion[]
   financial     FinancialInfo?
   created_at    DateTime @default(now())
   updated_at    DateTime @updatedAt
@@ -279,6 +280,30 @@ enum SplitStatus {
   EXPIRADO
   ESTORNADO
   CHARGEDBACK
+}
+
+// ─── Promoção / Evento ───────────────────────────────────────────────────────
+model Promotion {
+  id               String        @id @default(uuid())
+  establishment_id String
+  establishment    Establishment @relation(fields: [establishment_id], references: [id], onDelete: Cascade)
+  title            String
+  description      String?
+  type             PromotionType @default(DESCONTO)
+  discount_percent Int?          // percentual de desconto (apenas para tipo DESCONTO)
+  start_date       String        // YYYY-MM-DD
+  end_date         String?       // YYYY-MM-DD
+  start_hour       String?       // HH:00
+  end_hour         String?       // HH:00
+  active           Boolean       @default(true)
+  created_at       DateTime      @default(now())
+  updated_at       DateTime      @updatedAt
+}
+
+enum PromotionType {
+  DESCONTO
+  EVENTO
+  CAMPEONATO
 }
 
 // ─── Avaliação de Arena ───────────────────────────────────────────────────────

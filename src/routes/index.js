@@ -16,6 +16,7 @@ const reviewsRoutes        = require('./reviews.routes');
 const publicBookingRoutes  = require('./public.booking.routes');
 const mensalistasRoutes    = require('./mensalistas.routes');
 const adminMensalistasRoutes = require('./admin.mensalistas.routes');
+const { adminRouter: promotionsAdminRoutes, publicRouter: promotionsPublicRoutes } = require('./promotions.routes');
 
 const router = Router();
 
@@ -35,5 +36,7 @@ router.use('/reviews',       reviewsRoutes);           // avaliações de arenas
 router.use('/reserva',           publicBookingRoutes);        // consulta pública de reserva (link compartilhável)
 router.use('/mensalistas',       mensalistasRoutes);          // mensalistas (app cliente)
 router.use('/admin/mensalistas', adminMensalistasRoutes);     // mensalistas (painel admin)
+router.use('/admin/promotions',  promotionsAdminRoutes);      // promoções (painel admin)
+router.use('/arenas/:arenaId/promotions', promotionsPublicRoutes); // promoções (app cliente)
 
 module.exports = router;
