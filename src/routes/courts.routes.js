@@ -1,6 +1,7 @@
-const { Router }                     = require('express');
-const courtsController               = require('../controllers/courts.controller');
-const { authenticate, requireAdmin } = require('../middlewares/auth.middleware');
+const { Router }                        = require('express');
+const courtsController                  = require('../controllers/courts.controller');
+const { authenticate, requireAdmin }    = require('../middlewares/auth.middleware');
+const { requireMaxCourts }              = require('../middlewares/plan-feature.middleware');
 
 const router = Router();
 
@@ -10,8 +11,8 @@ router.use(authenticate, requireAdmin);
 // GET    /api/courts       — lista quadras do estabelecimento
 router.get('/',            courtsController.list);
 
-// POST   /api/courts       — cria uma quadra
-router.post('/',           courtsController.create);
+// POST   /api/courts       — cria uma quadra (verificar limite do plano)
+router.post('/',           requireMaxCourts(), courtsController.create);
 
 // PATCH  /api/courts/:id   — atualiza uma quadra
 router.patch('/:id',       courtsController.update);

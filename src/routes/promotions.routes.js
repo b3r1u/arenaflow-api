@@ -1,10 +1,11 @@
 const { Router } = require('express');
 const { authenticate, requireAdmin } = require('../middlewares/auth.middleware');
+const { requireFeature }             = require('../middlewares/plan-feature.middleware');
 const ctrl = require('../controllers/promotions.controller');
 
 // Rotas admin (autenticadas)
 const adminRouter = Router();
-adminRouter.use(authenticate, requireAdmin);
+adminRouter.use(authenticate, requireAdmin, requireFeature('promotions'));
 adminRouter.get('/',           ctrl.list);
 adminRouter.post('/',          ctrl.create);
 adminRouter.put('/:id',        ctrl.update);
