@@ -303,7 +303,6 @@ model Promotion {
 enum PromotionType {
   DESCONTO
   EVENTO
-  CAMPEONATO
 }
 
 // ─── Avaliação de Arena ───────────────────────────────────────────────────────
