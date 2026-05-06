@@ -1,10 +1,9 @@
 const https = require('https');
 
 function getBaseUrl() {
-  const env = (process.env.PAGARME_ENVIRONMENT || 'production').toLowerCase();
-  return env === 'sandbox'
-    ? 'https://sandbox.pagar.me/core/v5'
-    : 'https://api.pagar.me/core/v5';
+  // Pagar.me V5 usa o mesmo endpoint para sandbox e produção.
+  // O ambiente é diferenciado pelo prefixo da chave: sk_test_... (sandbox) ou sk_live_... (produção).
+  return 'https://api.pagar.me/core/v5';
 }
 
 function getAuthHeader() {
