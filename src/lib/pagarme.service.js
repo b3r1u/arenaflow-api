@@ -1,7 +1,10 @@
 const https = require('https');
 
 function getBaseUrl() {
-  return 'https://api.pagar.me/core/v5';
+  const env = (process.env.PAGARME_ENVIRONMENT || 'production').toLowerCase();
+  return env === 'sandbox'
+    ? 'https://sandbox.pagar.me/core/v5'
+    : 'https://api.pagar.me/core/v5';
 }
 
 function getAuthHeader() {
