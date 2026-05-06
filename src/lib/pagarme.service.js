@@ -358,4 +358,46 @@ async function cancelCharge(chargeId, amountCents) {
   return request('DELETE', `/charges/${chargeId}`, body);
 }
 
-module.exports = { createRecipient, getRecipient, createOrder, createPlayerPixOrder, getCharge, cancelCharge };
+/**
+ * Cria um plano de assinatura mensal no Pagar.me.
+ * Retorna o objeto do plano criado (com .id = "plan_xxxx").
+ *
+ * @param {{ name: string, slug: string, priceCents: number }} params
+ */
+async function createPlan({ name, slug, priceCents }) {
+  const payload = {
+    name,
+    description:    `Plano ${name} - ArenaFlow`,
+    currency:       'BRL',
+    interval:       'month',
+    interval_count: 1,
+    billing_type:   'prepaid',
+    payment_methods: ['credit_card'],
+    installments:   [1],
+    items: [{
+      name:     `${name} - ArenaFlow`,
+      quantity: 1,
+      pricing_scheme: {
+        price:         priceCents,
+        scheme_type:   'unit',
+      },
+    }],
+    metadata: { arenaflow_slug: slug },
+  };
+
+  return request('POST', '/plans', payload);
+}
+
+/**
+ * Consulta um plano no Pagar.me pelo ID.
+ */
+async function getPlan(planId) {
+  return request('GET', `/plans/${planId}`);
+}
+
+module.exports = {
+  createRecipient, getRecipient,
+  createOrder, createPlayerPixOrder,
+  getCharge, cancelCharge,
+  createPlan, getPlan,
+};

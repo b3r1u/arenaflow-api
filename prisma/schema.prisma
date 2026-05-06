@@ -29,13 +29,16 @@ enum Role {
 
 // ─── Planos ───────────────────────────────────────────────────────────────────
 model Plan {
-  id            String         @id @default(uuid())
-  slug          String         @unique   // free | essencial | pro | business
-  name          String
-  price         Float
-  max_courts    Int?                     // null = ilimitado
-  features      String[]
-  subscriptions Subscription[]
+  id              String         @id @default(uuid())
+  slug            String         @unique   // free | essencial | pro | business
+  name            String
+  description     String?
+  price           Float
+  max_courts      Int?                     // null = ilimitado
+  features        String[]
+  pagarme_plan_id String?                  // ID do plano no Pagar.me (ex: plan_xxxx)
+  active          Boolean        @default(true)
+  subscriptions   Subscription[]
 }
 
 // ─── Assinatura ───────────────────────────────────────────────────────────────

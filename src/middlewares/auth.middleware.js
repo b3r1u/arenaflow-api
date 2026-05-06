@@ -94,4 +94,17 @@ async function authenticateClient(req, res, next) {
   }
 }
 
-module.exports = { authenticate, requireAdmin, authenticateClient };
+/**
+ * Garante que o usuário autenticado é o administrador da plataforma (dono do ArenaFlow).
+ * Deve ser usado após `authenticate`.
+ */
+const PLATFORM_ADMIN_EMAIL = 'connectsolve.ti@gmail.com';
+
+function requirePlatformAdmin(req, res, next) {
+  if (req.user?.email !== PLATFORM_ADMIN_EMAIL) {
+    return res.status(403).json({ error: 'Acesso restrito ao administrador da plataforma' });
+  }
+  next();
+}
+
+module.exports = { authenticate, requireAdmin, authenticateClient, requirePlatformAdmin };

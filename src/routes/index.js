@@ -17,6 +17,7 @@ const publicBookingRoutes  = require('./public.booking.routes');
 const mensalistasRoutes    = require('./mensalistas.routes');
 const adminMensalistasRoutes = require('./admin.mensalistas.routes');
 const { adminRouter: promotionsAdminRoutes, publicRouter: promotionsPublicRoutes } = require('./promotions.routes');
+const platformPlansRoutes = require('./platform.plans.routes');
 
 const router = Router();
 
@@ -38,5 +39,6 @@ router.use('/mensalistas',       mensalistasRoutes);          // mensalistas (ap
 router.use('/admin/mensalistas', adminMensalistasRoutes);     // mensalistas (painel admin)
 router.use('/admin/promotions',  promotionsAdminRoutes);      // promoções (painel admin)
 router.use('/arenas/:arenaId/promotions', promotionsPublicRoutes); // promoções (app cliente)
+router.use('/platform/plans',    platformPlansRoutes);         // gestão de planos (platform admin)
 
 module.exports = router;
