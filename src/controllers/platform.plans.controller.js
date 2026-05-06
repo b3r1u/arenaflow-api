@@ -118,7 +118,7 @@ async function syncPagarme(req, res) {
     return res.json({
       plan:           updated,
       pagarme_plan_id: pagarmeResult.id,
-      message:        `Plano sincronizado com Pagar.me: ${pagarmeResult.id}`,
+      message:        `Plano criado com sucesso no Pagar.me!`,
     });
   } catch (err) {
     console.error('[PLATFORM/PLANS/SYNC]', err.message);
