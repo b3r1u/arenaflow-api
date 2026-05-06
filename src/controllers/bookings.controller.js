@@ -239,12 +239,19 @@ async function getMyBookings(req, res) {
     const bookings = await prisma.booking.findMany({
       where: { user_uid: req.user.firebase_uid },
       orderBy: { created_at: 'desc' },
+      include: {
+        court: {
+          include: { establishment: { select: { name: true } } },
+        },
+      },
     });
     return res.json({
       bookings: bookings.map(b => ({
         id:              b.id,
         arena_id:        b.arena_id,
+        arena_name:      b.court?.establishment?.name || '',
         court_id:        b.court_id,
+        court_name:      b.court?.name || '',
         client_name:     b.client_name,
         date:            b.date,
         start_hour:      b.start_hour,
