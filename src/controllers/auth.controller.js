@@ -46,34 +46,26 @@ async function me(req, res) {
       });
     }
 
-    // Auto-cria assinatura se o usuário ADMIN ainda não tiver uma
-    if (!user.subscription && user.role === 'ADMIN') {
-      const planSlug = req.body?.plan_slug || 'pro';
-      const isFree   = planSlug === 'free';
+    // Auto-cria assinatura apenas para plano free ou quando não há plano escolhido
+    const isNewUser = !user.subscription;
+    if (isNewUser && user.role === 'ADMIN') {
+      const planSlug = req.body?.plan_slug || 'free';
 
-      const selectedPlan = await prisma.plan.findUnique({ where: { slug: planSlug } })
-        ?? await prisma.plan.findUnique({ where: { slug: 'pro' } }); // fallback seguro
+      // Plano pago → não cria subscription automaticamente; o frontend vai ao checkout
+      if (planSlug !== 'free') {
+        // Retorna sinalizando que é novo usuário com plano pago pendente de pagamento
+        return res.json({ user, is_new_user: true, pending_plan: planSlug });
+      }
 
-      if (selectedPlan) {
-        const trialEndsAt = new Date();
-        trialEndsAt.setDate(trialEndsAt.getDate() + 14);
-
+      // Plano free → cria ACTIVE imediatamente
+      const freePlan = await prisma.plan.findUnique({ where: { slug: 'free' } });
+      if (freePlan) {
         await prisma.subscription.create({
-          data: {
-            user_id:       user.id,
-            plan_id:       selectedPlan.id,
-            status:        isFree ? 'ACTIVE' : 'TRIAL',
-            trial_ends_at: isFree ? null : trialEndsAt,
-          },
+          data: { user_id: user.id, plan_id: freePlan.id, status: 'ACTIVE' },
         });
-
-        // Recarrega com a assinatura recém-criada
         user = await prisma.user.findUnique({
           where: { id: user.id },
-          include: {
-            subscription: { include: { plan: true } },
-            establishment: true,
-          },
+          include: { subscription: { include: { plan: true } }, establishment: true },
         });
       }
     }
@@ -84,7 +76,7 @@ async function me(req, res) {
       user.subscription.days_remaining = Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
     }
 
-    return res.json({ user });
+    return res.json({ user, is_new_user: isNewUser });
   } catch (err) {
     console.error('[AUTH/ME]', err.message);
     return res.status(401).json({ error: 'Token inválido ou expirado' });

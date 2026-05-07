@@ -312,6 +312,53 @@ async function pagarmeWebhook(req, res) {
       return;
     }
 
+    // ── Eventos de assinatura SaaS ───────────────────────────────────────────
+    if (type === 'subscription.status_changed' || type === 'subscription.canceled' || type === 'subscription.active') {
+      const subscriptionId = event?.data?.id;
+      const pagarmeStatus  = event?.data?.status;
+      if (!subscriptionId) return;
+
+      const statusMap = {
+        active:   'ACTIVE',
+        canceled: 'CANCELLED',
+        past_due: 'PAST_DUE',
+        inactive: 'EXPIRED',
+      };
+      const localStatus = statusMap[pagarmeStatus];
+      if (!localStatus) {
+        console.log(`[WEBHOOK] subscription status desconhecido: ${pagarmeStatus}`);
+        return;
+      }
+
+      const updated = await prisma.subscription.updateMany({
+        where: { pagarme_subscription_id: subscriptionId },
+        data:  { status: localStatus, updated_at: new Date() },
+      });
+
+      console.log(`[WEBHOOK] subscription ${subscriptionId} → ${localStatus} (${updated.count} registro(s) atualizado(s))`);
+      return;
+    }
+
+    // ── charge.paid para assinatura (primeiro ciclo ou renovação) ────────────
+    // O Pagar.me dispara charge.paid quando a cobrança recorrente é processada.
+    // Usamos para garantir que status fique ACTIVE mesmo se o webhook de subscription falhar.
+    if (type === 'charge.paid') {
+      const chargeId       = event?.data?.id;
+      const subscriptionId = event?.data?.subscription?.id;
+
+      if (subscriptionId && chargeId) {
+        // É uma cobrança de assinatura SaaS
+        const updated = await prisma.subscription.updateMany({
+          where: { pagarme_subscription_id: subscriptionId },
+          data:  { status: 'ACTIVE', updated_at: new Date() },
+        });
+        if (updated.count > 0) {
+          console.log(`[WEBHOOK] charge.paid (subscription) → ${subscriptionId} → ACTIVE`);
+          return;
+        }
+      }
+    }
+
     // Outros eventos — apenas loga
     console.log('[WEBHOOK] Evento ignorado:', type);
 

@@ -43,22 +43,24 @@ model Plan {
 
 // ─── Assinatura ───────────────────────────────────────────────────────────────
 model Subscription {
-  id            String             @id @default(uuid())
-  user_id       String             @unique
-  user          User               @relation(fields: [user_id], references: [id])
-  plan_id       String
-  plan          Plan               @relation(fields: [plan_id], references: [id])
-  status        SubscriptionStatus @default(TRIAL)
-  trial_ends_at DateTime?
-  starts_at     DateTime           @default(now())
-  ends_at       DateTime?
-  created_at    DateTime           @default(now())
-  updated_at    DateTime           @updatedAt
+  id                      String             @id @default(uuid())
+  user_id                 String             @unique
+  user                    User               @relation(fields: [user_id], references: [id])
+  plan_id                 String
+  plan                    Plan               @relation(fields: [plan_id], references: [id])
+  status                  SubscriptionStatus @default(TRIAL)
+  pagarme_subscription_id String?            // ID da assinatura no Pagar.me (sub_xxxx)
+  trial_ends_at           DateTime?
+  starts_at               DateTime           @default(now())
+  ends_at                 DateTime?
+  created_at              DateTime           @default(now())
+  updated_at              DateTime           @updatedAt
 }
 
 enum SubscriptionStatus {
   TRIAL
   ACTIVE
+  PAST_DUE   // inadimplente — pagamento falhou
   EXPIRED
   CANCELLED
 }

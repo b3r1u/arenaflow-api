@@ -397,9 +397,59 @@ async function getPlan(planId) {
   return request('GET', `/plans/${planId}`);
 }
 
+/**
+ * Cria uma assinatura recorrente de cartão de crédito no Pagar.me.
+ * @param {{ planId, customer: { name, email, document, phone }, card: { number, holder_name, exp_month, exp_year, cvv } }} params
+ * Retorna o objeto da assinatura (com .id = "sub_xxxx" e .status).
+ */
+async function createSubscription({ planId, customer, card }) {
+  const phoneDigits = (customer.phone || '').replace(/\D/g, '');
+  const mobilePhone = phoneDigits.length >= 10
+    ? { country_code: '55', area_code: phoneDigits.slice(0, 2), number: phoneDigits.slice(2) }
+    : { country_code: '55', area_code: '11', number: '999999999' };
+
+  const rawDoc = (customer.document || '').replace(/\D/g, '');
+
+  const payload = {
+    plan_id:        planId,
+    payment_method: 'credit_card',
+    customer: {
+      name:     customer.name  || 'Cliente',
+      email:    customer.email || 'cliente@arenaflow.app',
+      document: rawDoc,
+      type:     'individual',
+      phones: { mobile_phone: mobilePhone },
+    },
+    card: {
+      number:      card.number.replace(/\D/g, ''),
+      holder_name: card.holder_name.toUpperCase(),
+      exp_month:   parseInt(card.exp_month, 10),
+      exp_year:    parseInt(card.exp_year,  10),
+      cvv:         card.cvv,
+    },
+  };
+
+  return request('POST', '/subscriptions', payload);
+}
+
+/**
+ * Cancela uma assinatura no Pagar.me.
+ */
+async function cancelSubscription(subscriptionId) {
+  return request('DELETE', `/subscriptions/${subscriptionId}`);
+}
+
+/**
+ * Consulta uma assinatura no Pagar.me.
+ */
+async function getSubscription(subscriptionId) {
+  return request('GET', `/subscriptions/${subscriptionId}`);
+}
+
 module.exports = {
   createRecipient, getRecipient,
   createOrder, createPlayerPixOrder,
   getCharge, cancelCharge,
   createPlan, getPlan,
+  createSubscription, cancelSubscription, getSubscription,
 };
