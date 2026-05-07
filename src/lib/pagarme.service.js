@@ -404,9 +404,8 @@ async function getPlan(planId) {
  */
 async function createSubscription({ planId, customer, card }) {
   const phoneDigits = (customer.phone || '').replace(/\D/g, '');
-  const mobilePhone = phoneDigits.length >= 10
-    ? { country_code: '55', area_code: phoneDigits.slice(0, 2), number: phoneDigits.slice(2) }
-    : { country_code: '55', area_code: '11', number: '999999999' };
+  if (phoneDigits.length < 10) throw new Error('Número de celular inválido ou não informado');
+  const mobilePhone = { country_code: '55', area_code: phoneDigits.slice(0, 2), number: phoneDigits.slice(2) };
 
   const rawDoc = (customer.document || '').replace(/\D/g, '');
 
