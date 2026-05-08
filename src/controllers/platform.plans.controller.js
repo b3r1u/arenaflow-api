@@ -103,11 +103,18 @@ async function syncPagarme(req, res) {
       return res.status(400).json({ error: 'Plano gratuito não precisa de registro no Pagar.me' });
     }
 
-    // Cria o plano no Pagar.me (recorrência mensal por cartão)
+    // Planos anuais (slug termina em '-anual'): cobrança anual de price*12 no Pagar.me
+    const isAnual      = plan.slug.endsWith('-anual');
+    const priceCents   = isAnual
+      ? Math.round(plan.price * 12 * 100)   // price = equivalente mensal; cobra anual
+      : Math.round(plan.price * 100);
+
     const pagarmeResult = await pagarme.createPlan({
-      name:       plan.name,
-      slug:       plan.slug,
-      priceCents: Math.round(plan.price * 100),
+      name:          plan.name,
+      slug:          plan.slug,
+      priceCents,
+      interval:      isAnual ? 'year'  : 'month',
+      intervalCount: 1,
     });
 
     const updated = await prisma.plan.update({

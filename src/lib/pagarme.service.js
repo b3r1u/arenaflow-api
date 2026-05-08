@@ -196,6 +196,8 @@ async function createOrder({
   customerEmail,
   customerDocument,
   customerPhone,
+  commissionPct = 0,
+  arenaflowRecipientId = null,
 }) {
   // Parse phone para formato Pagar.me. Fallback para número sandbox válido.
   const phoneDigits = (customerPhone || '').replace(/\D/g, '');
@@ -237,18 +239,43 @@ async function createOrder({
     payments: [{
       payment_method: 'pix',
       pix: { expires_in: 86400 }, // 24h
-      // Split: 100% do valor vai para o dono da quadra
+      // Split: distribui entre arena e ArenaFlow conforme comissão do plano
       ...(recipientId ? {
-        split: [{
-          recipient_id: recipientId,
-          amount:       100,
-          type:         'percentage',
-          options: {
-            liable:                true,
-            charge_processing_fee: true,
-            charge_remainder_fee:  true,
-          },
-        }],
+        split: (arenaflowRecipientId && commissionPct > 0)
+          ? [
+              {
+                recipient_id: recipientId,
+                amount:       100 - commissionPct,
+                type:         'percentage',
+                options: {
+                  liable:                true,
+                  charge_processing_fee: true,
+                  charge_remainder_fee:  true,
+                },
+              },
+              {
+                recipient_id: arenaflowRecipientId,
+                amount:       commissionPct,
+                type:         'percentage',
+                options: {
+                  liable:                false,
+                  charge_processing_fee: false,
+                  charge_remainder_fee:  false,
+                },
+              },
+            ]
+          : [
+              {
+                recipient_id: recipientId,
+                amount:       100,
+                type:         'percentage',
+                options: {
+                  liable:                true,
+                  charge_processing_fee: true,
+                  charge_remainder_fee:  true,
+                },
+              },
+            ],
       } : {}),
     }],
   };
@@ -258,7 +285,7 @@ async function createOrder({
   const charge = result.charges?.[0];
   const tx     = charge?.last_transaction;
 
-  console.log(`[PAGARME] order ${result.id} → ${result.status} | charge ${charge?.id} → ${charge?.status}`);
+  console.log(`[PAGARME] order ${result.id} → ${result.status} | charge ${charge?.id} → ${charge?.status} | split arena=${100 - commissionPct}% arenaflow=${commissionPct}%`);
 
   return {
     orderId:    result.id,
@@ -281,6 +308,8 @@ async function createPlayerPixOrder({
   playerEmail,
   playerDocument,
   recipientId,
+  commissionPct = 0,
+  arenaflowRecipientId = null,
 }) {
   const doc = (playerDocument || '00000000000').replace(/\D/g, '').padEnd(11, '0').slice(0, 11);
 
@@ -302,17 +331,43 @@ async function createPlayerPixOrder({
     payments: [{
       payment_method: 'pix',
       pix: { expires_in: 86400 }, // 24h
+      // Split: distribui entre arena e ArenaFlow conforme comissão do plano
       ...(recipientId ? {
-        split: [{
-          recipient_id: recipientId,
-          amount:       100,
-          type:         'percentage',
-          options: {
-            liable:                true,
-            charge_processing_fee: true,
-            charge_remainder_fee:  true,
-          },
-        }],
+        split: (arenaflowRecipientId && commissionPct > 0)
+          ? [
+              {
+                recipient_id: recipientId,
+                amount:       100 - commissionPct,
+                type:         'percentage',
+                options: {
+                  liable:                true,
+                  charge_processing_fee: true,
+                  charge_remainder_fee:  true,
+                },
+              },
+              {
+                recipient_id: arenaflowRecipientId,
+                amount:       commissionPct,
+                type:         'percentage',
+                options: {
+                  liable:                false,
+                  charge_processing_fee: false,
+                  charge_remainder_fee:  false,
+                },
+              },
+            ]
+          : [
+              {
+                recipient_id: recipientId,
+                amount:       100,
+                type:         'percentage',
+                options: {
+                  liable:                true,
+                  charge_processing_fee: true,
+                  charge_remainder_fee:  true,
+                },
+              },
+            ],
       } : {}),
     }],
   };
@@ -321,7 +376,7 @@ async function createPlayerPixOrder({
   const charge = result.charges?.[0];
   const tx     = charge?.last_transaction;
 
-  console.log(`[PAGARME] player order ${result.id} → ${result.status} | charge ${charge?.id} → ${charge?.status}`);
+  console.log(`[PAGARME] player order ${result.id} → ${result.status} | charge ${charge?.id} → ${charge?.status} | split arena=${100 - commissionPct}% arenaflow=${commissionPct}%`);
 
   // Mapeamento Pagar.me V5:
   //   tx.qr_code     = string EMV "Pix copia e cola" (texto)
@@ -361,27 +416,27 @@ async function cancelCharge(chargeId, amountCents) {
 }
 
 /**
- * Cria um plano de assinatura mensal no Pagar.me.
+ * Cria um plano de assinatura no Pagar.me.
  * Retorna o objeto do plano criado (com .id = "plan_xxxx").
  *
- * @param {{ name: string, slug: string, priceCents: number }} params
+ * @param {{ name: string, slug: string, priceCents: number, interval?: 'month'|'year', intervalCount?: number }} params
  */
-async function createPlan({ name, slug, priceCents }) {
+async function createPlan({ name, slug, priceCents, interval = 'month', intervalCount = 1 }) {
   const payload = {
     name,
-    description:    `Plano ${name} - ArenaFlow`,
-    currency:       'BRL',
-    interval:       'month',
-    interval_count: 1,
-    billing_type:   'prepaid',
+    description:     `Plano ${name} - ArenaFlow`,
+    currency:        'BRL',
+    interval,
+    interval_count:  intervalCount,
+    billing_type:    'prepaid',
     payment_methods: ['credit_card'],
-    installments:   [1],
+    installments:    [1],
     items: [{
       name:     `${name} - ArenaFlow`,
       quantity: 1,
       pricing_scheme: {
-        price:         priceCents,
-        scheme_type:   'unit',
+        price:       priceCents,
+        scheme_type: 'unit',
       },
     }],
     metadata: { arenaflow_slug: slug },
@@ -402,12 +457,22 @@ async function getPlan(planId) {
  * @param {{ planId, customer: { name, email, document, phone }, card: { number, holder_name, exp_month, exp_year, cvv } }} params
  * Retorna o objeto da assinatura (com .id = "sub_xxxx" e .status).
  */
-async function createSubscription({ planId, customer, card }) {
+async function createSubscription({ planId, customer, card, billingAddress }) {
   const phoneDigits = (customer.phone || '').replace(/\D/g, '');
   if (phoneDigits.length < 10) throw new Error('Número de celular inválido ou não informado');
   const mobilePhone = { country_code: '55', area_code: phoneDigits.slice(0, 2), number: phoneDigits.slice(2) };
 
   const rawDoc = (customer.document || '').replace(/\D/g, '');
+
+  // billing_address é exigido pelo Pagar.me em produção para cobranças recorrentes de cartão
+  const rawCep  = (billingAddress?.zip_code || '').replace(/\D/g, '');
+  const billing = {
+    line_1:   billingAddress?.line_1  || '1',
+    zip_code: rawCep                  || '01310100',
+    city:     billingAddress?.city    || 'Não informado',
+    state:    billingAddress?.state   || 'SP',
+    country:  'BR',
+  };
 
   const payload = {
     plan_id:        planId,
@@ -420,11 +485,12 @@ async function createSubscription({ planId, customer, card }) {
       phones: { mobile_phone: mobilePhone },
     },
     card: {
-      number:      card.number.replace(/\D/g, ''),
-      holder_name: card.holder_name.toUpperCase(),
-      exp_month:   parseInt(card.exp_month, 10),
-      exp_year:    parseInt(card.exp_year,  10),
-      cvv:         card.cvv,
+      number:          card.number.replace(/\D/g, ''),
+      holder_name:     card.holder_name.toUpperCase(),
+      exp_month:       parseInt(card.exp_month, 10),
+      exp_year:        parseInt(card.exp_year,  10),
+      cvv:             card.cvv,
+      billing_address: billing,
     },
   };
 

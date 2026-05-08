@@ -37,6 +37,7 @@ model Plan {
   max_courts      Int?                     // null = ilimitado
   features        String[]
   pagarme_plan_id String?                  // ID do plano no Pagar.me (ex: plan_xxxx)
+  commission_pct  Float          @default(10)   // % cobrada pela ArenaFlow nos pagamentos
   active          Boolean        @default(true)
   subscriptions   Subscription[]
 }

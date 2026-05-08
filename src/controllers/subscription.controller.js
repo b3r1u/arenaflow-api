@@ -7,7 +7,7 @@ const pagarme = require('../lib/pagarme.service');
  * Body: { plan_slug, card: { number, holder_name, exp_month, exp_year, cvv }, customer_document, customer_phone }
  */
 async function create(req, res) {
-  const { plan_slug, card, customer_document, customer_phone } = req.body;
+  const { plan_slug, card, customer_document, customer_phone, billing_address } = req.body;
 
   if (!plan_slug || !card?.number || !card?.holder_name || !card?.exp_month || !card?.exp_year || !card?.cvv) {
     return res.status(400).json({ error: 'Dados incompletos: plano e cartão são obrigatórios' });
@@ -39,6 +39,7 @@ async function create(req, res) {
           phone:    customer_phone    || '',
         },
         card,
+        billingAddress: billing_address || null,
       });
     } catch (pagarmeErr) {
       console.error('[SUBSCRIPTION/CREATE] Pagar.me erro:', pagarmeErr.message);
@@ -46,8 +47,21 @@ async function create(req, res) {
     }
 
     // Mapeia status do Pagar.me → nosso enum
-    const statusMap = { active: 'ACTIVE', canceled: 'CANCELLED', past_due: 'PAST_DUE' };
+    const statusMap = {
+      active:   'ACTIVE',
+      canceled: 'CANCELLED',
+      past_due: 'PAST_DUE',
+      inactive: 'EXPIRED',
+      failed:   'PAST_DUE', // cobrança falhou — assinatura criada mas não paga
+    };
     const localStatus = statusMap[pagarmeResult.status] || 'ACTIVE';
+
+    // Se a cobrança falhou imediatamente, retorna erro ao frontend
+    if (pagarmeResult.status === 'failed') {
+      return res.status(422).json({
+        error: 'O cartão foi recusado. Verifique os dados e tente novamente, ou use outro cartão.',
+      });
+    }
 
     // Cria ou atualiza assinatura no banco
     await prisma.subscription.upsert({
@@ -96,9 +110,16 @@ async function cancel(req, res) {
 
     await pagarme.cancelSubscription(user.subscription.pagarme_subscription_id);
 
+    // Rebaixa para o plano Free ao cancelar
+    const freePlan = await prisma.plan.findUnique({ where: { slug: 'free' } });
+
     await prisma.subscription.update({
       where: { id: user.subscription.id },
-      data:  { status: 'CANCELLED', updated_at: new Date() },
+      data: {
+        status:     'CANCELLED',
+        plan_id:    freePlan?.id ?? user.subscription.plan_id,
+        updated_at: new Date(),
+      },
     });
 
     return res.json({ success: true });

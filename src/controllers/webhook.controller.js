@@ -323,6 +323,7 @@ async function pagarmeWebhook(req, res) {
         canceled: 'CANCELLED',
         past_due: 'PAST_DUE',
         inactive: 'EXPIRED',
+        failed:   'PAST_DUE',
       };
       const localStatus = statusMap[pagarmeStatus];
       if (!localStatus) {
@@ -330,9 +331,16 @@ async function pagarmeWebhook(req, res) {
         return;
       }
 
+      // Ao cancelar, rebaixa para o plano Free
+      let extraData = {};
+      if (localStatus === 'CANCELLED') {
+        const freePlan = await prisma.plan.findUnique({ where: { slug: 'free' } });
+        if (freePlan) extraData = { plan_id: freePlan.id };
+      }
+
       const updated = await prisma.subscription.updateMany({
         where: { pagarme_subscription_id: subscriptionId },
-        data:  { status: localStatus, updated_at: new Date() },
+        data:  { status: localStatus, updated_at: new Date(), ...extraData },
       });
 
       console.log(`[WEBHOOK] subscription ${subscriptionId} → ${localStatus} (${updated.count} registro(s) atualizado(s))`);

@@ -75,7 +75,18 @@ async function create(req, res) {
     // 1. Busca a quadra e o estabelecimento
     const court = await prisma.court.findFirst({
       where: { id: court_id, active: true },
-      include: { establishment: { include: { financial: true } } },
+      include: {
+        establishment: {
+          include: {
+            financial: true,
+            owner: {
+              include: {
+                subscription: { include: { plan: true } },
+              },
+            },
+          },
+        },
+      },
     });
     if (!court) return res.status(404).json({ error: 'Quadra não encontrada' });
 
@@ -114,7 +125,9 @@ async function create(req, res) {
     const paidAmount    = payment_option === '50' ? totalAmount / 2 : totalAmount;
     const amountCents   = Math.round(paidAmount * 100);
 
-    const recipientId = court.establishment.financial?.pagarme_recipient_id;
+    const recipientId         = court.establishment.financial?.pagarme_recipient_id;
+    const commissionPct       = court.establishment.owner?.subscription?.plan?.commission_pct ?? 10;
+    const arenaflowRecipientId = process.env.PAGARME_PLATFORM_RECIPIENT_ID || null;
 
     // 4. Cria order PIX no Pagar.me
     // recipientId=null → PIX simples (sem split); com id → split para o dono da arena (requer conta PSP)
@@ -128,6 +141,8 @@ async function create(req, res) {
         customerEmail:    req.user?.email || 'cliente@arenaflow.app',
         customerDocument: req.body.client_document || '',
         customerPhone:    client_phone || req.user?.phone || '',
+        commissionPct,
+        arenaflowRecipientId,
       });
     } catch (pixErr) {
       console.error('[BOOKINGS] PIX falhou, criando reserva sem QR code:', pixErr.message);
@@ -586,7 +601,20 @@ async function payBalance(req, res) {
     const booking = await prisma.booking.findFirst({
       where: { id: req.params.id, user_uid: req.user.firebase_uid },
       include: {
-        court: { include: { establishment: { include: { financial: true } } } },
+        court: {
+          include: {
+            establishment: {
+              include: {
+                financial: true,
+                owner: {
+                  include: {
+                    subscription: { include: { plan: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     });
 
@@ -607,7 +635,9 @@ async function payBalance(req, res) {
       return res.status(409).json({ error: 'Saldo restante muito pequeno (mínimo R$1,00)' });
     }
 
-    const recipientId = booking.court.establishment.financial?.pagarme_recipient_id || null;
+    const recipientId          = booking.court.establishment.financial?.pagarme_recipient_id || null;
+    const commissionPct        = booking.court.establishment.owner?.subscription?.plan?.commission_pct ?? 10;
+    const arenaflowRecipientId = process.env.PAGARME_PLATFORM_RECIPIENT_ID || null;
 
     let pixData = { orderId: null, chargeId: null, qrCode: null, qrCodeUrl: null, expiresAt: null };
     try {
@@ -619,6 +649,8 @@ async function payBalance(req, res) {
         customerEmail:    req.user?.email || 'cliente@arenaflow.app',
         customerDocument: '',
         customerPhone:    booking.client_phone || '',
+        commissionPct,
+        arenaflowRecipientId,
       });
     } catch (pixErr) {
       console.error('[BOOKINGS/PAY_BALANCE] Erro ao gerar PIX:', pixErr.message);

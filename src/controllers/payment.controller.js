@@ -41,7 +41,20 @@ async function createPaymentGroup(req, res) {
     const booking = await prisma.booking.findFirst({
       where: { id: bookingId, user_uid: req.user.firebase_uid },
       include: {
-        court: { include: { establishment: { include: { financial: true } } } },
+        court: {
+          include: {
+            establishment: {
+              include: {
+                financial: true,
+                owner: {
+                  include: {
+                    subscription: { include: { plan: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
         payment_group: true,
       },
     });
@@ -53,9 +66,11 @@ async function createPaymentGroup(req, res) {
       return res.status(409).json({ error: 'Esta reserva já possui um grupo de pagamento' });
     }
 
-    const totalCents     = Math.round(booking.total_amount * 100);
-    const recipientId    = booking.court.establishment.financial?.pagarme_recipient_id || null;
-    const arenaDesc      = `${booking.court.name} — ${booking.date} ${booking.start_hour}–${booking.end_hour}`;
+    const totalCents           = Math.round(booking.total_amount * 100);
+    const recipientId          = booking.court.establishment.financial?.pagarme_recipient_id || null;
+    const commissionPct        = booking.court.establishment.owner?.subscription?.plan?.commission_pct ?? 10;
+    const arenaflowRecipientId = process.env.PAGARME_PLATFORM_RECIPIENT_ID || null;
+    const arenaDesc            = `${booking.court.name} — ${booking.date} ${booking.start_hour}–${booking.end_hour}`;
 
     // CPF fallback: usa o do dono da reserva (user logado) — Pagar.me em produção rejeita CPF zerado por antifraude
     const userRow = await prisma.user.findUnique({ where: { firebase_uid: req.user.firebase_uid } });
@@ -127,6 +142,8 @@ async function createPaymentGroup(req, res) {
           playerEmail:    item.player_email,
           playerDocument: item.player_document,
           recipientId,
+          commissionPct,
+          arenaflowRecipientId,
         });
       } catch (pixErr) {
         console.error(`[PAYMENT] Erro ao criar Pix para ${item.player_name}:`, pixErr.message);
@@ -273,7 +290,20 @@ async function regenerateSplit(req, res) {
     const booking = await prisma.booking.findFirst({
       where:   { id: bookingId, user_uid: req.user.firebase_uid },
       include: {
-        court: { include: { establishment: { include: { financial: true } } } },
+        court: {
+          include: {
+            establishment: {
+              include: {
+                financial: true,
+                owner: {
+                  include: {
+                    subscription: { include: { plan: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     });
     if (!booking) return res.status(404).json({ error: 'Reserva não encontrada' });
@@ -286,8 +316,10 @@ async function regenerateSplit(req, res) {
     if (!split) return res.status(404).json({ error: 'Cota não encontrada' });
     if (split.status === 'PAGO') return res.status(409).json({ error: 'Cota já foi paga' });
 
-    const recipientId = booking.court.establishment.financial?.pagarme_recipient_id || null;
-    const arenaDesc   = `${booking.court.name} — ${booking.date} ${booking.start_hour}–${booking.end_hour}`;
+    const recipientId          = booking.court.establishment.financial?.pagarme_recipient_id || null;
+    const commissionPct        = booking.court.establishment.owner?.subscription?.plan?.commission_pct ?? 10;
+    const arenaflowRecipientId = process.env.PAGARME_PLATFORM_RECIPIENT_ID || null;
+    const arenaDesc            = `${booking.court.name} — ${booking.date} ${booking.start_hour}–${booking.end_hour}`;
 
     // Cria novo order no Pagar.me
     const pixData = await createPlayerPixOrder({
@@ -297,6 +329,8 @@ async function regenerateSplit(req, res) {
       playerEmail:    null,
       playerDocument: null,
       recipientId,
+      commissionPct,
+      arenaflowRecipientId,
     });
 
     // Atualiza a cota com o novo QR
