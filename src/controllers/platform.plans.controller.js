@@ -3,15 +3,14 @@ const pagarme = require('../lib/pagarme.service');
 
 /**
  * GET /api/platform/plans
- * Lista todos os planos do sistema com estatísticas de assinantes.
+ * Lista os planos mensais do sistema (excl. -anual — gerenciados automaticamente).
  */
 async function list(_req, res) {
   try {
     const plans = await prisma.plan.findMany({
-      orderBy:  { price: 'asc' },
-      include: {
-        _count: { select: { subscriptions: true } },
-      },
+      where:   { NOT: { slug: { endsWith: '-anual' } } },
+      orderBy: { price: 'asc' },
+      include: { _count: { select: { subscriptions: true } } },
     });
     return res.json({ plans });
   } catch (err) {
@@ -58,7 +57,8 @@ async function create(req, res) {
 
 /**
  * PUT /api/platform/plans/:id
- * Atualiza os campos de um plano existente.
+ * Atualiza os campos de um plano mensal existente.
+ * Se o preço mudar, reflete automaticamente no plano -anual correspondente (× 0,8).
  */
 async function update(req, res) {
   const { id } = req.params;
@@ -77,6 +77,16 @@ async function update(req, res) {
       },
     });
 
+    // Se o preço foi alterado, propaga para o plano anual correspondente (se existir)
+    if (price !== undefined && !plan.slug.endsWith('-anual')) {
+      const annualSlug  = `${plan.slug}-anual`;
+      const annualPrice = parseFloat((parseFloat(price) * 0.8).toFixed(2));
+      await prisma.plan.updateMany({
+        where: { slug: annualSlug },
+        data:  { price: annualPrice },
+      });
+    }
+
     return res.json({ plan });
   } catch (err) {
     if (err.code === 'P2025') {
@@ -89,8 +99,8 @@ async function update(req, res) {
 
 /**
  * POST /api/platform/plans/:id/sync-pagarme
- * Cria (ou recria) o plano no Pagar.me e salva o pagarme_plan_id no banco.
- * Apenas para planos pagos (price > 0).
+ * Sincroniza o plano mensal no Pagar.me e cria/sincroniza automaticamente
+ * o plano anual correspondente (preço = mensal × 0,8, intervalo = year).
  */
 async function syncPagarme(req, res) {
   const { id } = req.params;
@@ -98,34 +108,68 @@ async function syncPagarme(req, res) {
   try {
     const plan = await prisma.plan.findUnique({ where: { id } });
     if (!plan) return res.status(404).json({ error: 'Plano não encontrado' });
-
     if (plan.price === 0) {
       return res.status(400).json({ error: 'Plano gratuito não precisa de registro no Pagar.me' });
     }
+    if (plan.slug.endsWith('-anual')) {
+      return res.status(400).json({ error: 'Planos anuais são sincronizados automaticamente a partir do plano mensal' });
+    }
 
-    // Planos anuais (slug termina em '-anual'): cobrança anual de price*12 no Pagar.me
-    const isAnual      = plan.slug.endsWith('-anual');
-    const priceCents   = isAnual
-      ? Math.round(plan.price * 12 * 100)   // price = equivalente mensal; cobra anual
-      : Math.round(plan.price * 100);
-
-    const pagarmeResult = await pagarme.createPlan({
+    // ── 1. Sincroniza plano mensal ──────────────────────────────────────────
+    const monthlyResult = await pagarme.createPlan({
       name:          plan.name,
       slug:          plan.slug,
-      priceCents,
-      interval:      isAnual ? 'year'  : 'month',
+      priceCents:    Math.round(plan.price * 100),
+      interval:      'month',
       intervalCount: 1,
     });
 
-    const updated = await prisma.plan.update({
+    const updatedMonthly = await prisma.plan.update({
       where: { id },
-      data:  { pagarme_plan_id: pagarmeResult.id },
+      data:  { pagarme_plan_id: monthlyResult.id },
     });
 
+    // ── 2. Cria / sincroniza plano anual correspondente ────────────────────
+    const annualSlug  = `${plan.slug}-anual`;
+    const annualPrice = parseFloat((plan.price * 0.8).toFixed(2));       // equivalente mensal com 20% off
+    const annualName  = `${plan.name} Anual`;
+
+    // Garante que o plano anual existe no banco
+    const annualPlan = await prisma.plan.upsert({
+      where:  { slug: annualSlug },
+      update: { price: annualPrice, name: annualName, features: plan.features, max_courts: plan.max_courts, active: plan.active },
+      create: {
+        slug:        annualSlug,
+        name:        annualName,
+        description: `${plan.description || plan.name} — cobrança anual com 20% de desconto`,
+        price:       annualPrice,
+        max_courts:  plan.max_courts,
+        features:    plan.features,
+        active:      plan.active,
+        commission_pct: plan.commission_pct,
+      },
+    });
+
+    // Sincroniza plano anual no Pagar.me (cobra price×12 por ano)
+    const annualResult = await pagarme.createPlan({
+      name:          annualName,
+      slug:          annualSlug,
+      priceCents:    Math.round(annualPrice * 12 * 100),
+      interval:      'year',
+      intervalCount: 1,
+    });
+
+    await prisma.plan.update({
+      where: { id: annualPlan.id },
+      data:  { pagarme_plan_id: annualResult.id },
+    });
+
+    console.log(`[SYNC] ${plan.slug} → Pagar.me ${monthlyResult.id} | ${annualSlug} → ${annualResult.id}`);
+
     return res.json({
-      plan:           updated,
-      pagarme_plan_id: pagarmeResult.id,
-      message:        `Plano criado com sucesso no Pagar.me!`,
+      plan:            updatedMonthly,
+      pagarme_plan_id: monthlyResult.id,
+      message:         `Plano mensal e anual sincronizados com o Pagar.me!`,
     });
   } catch (err) {
     console.error('[PLATFORM/PLANS/SYNC]', err.message);
