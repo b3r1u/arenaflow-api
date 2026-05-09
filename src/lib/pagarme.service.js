@@ -188,12 +188,10 @@ async function getRecipient(recipientId) {
  * @param {{ interval: 'Daily'|'Weekly'|'Monthly', day: number }} settings
  */
 async function updateRecipientTransferSettings(recipientId, { interval, day }) {
-  return request('PATCH', `/recipients/${recipientId}`, {
-    transfer_settings: {
-      transfer_enabled:  true,
-      transfer_interval: interval,
-      transfer_day:      day,
-    },
+  return request('PATCH', `/recipients/${recipientId}/transfer-settings`, {
+    transfer_enabled:  true,
+    transfer_interval: interval,
+    transfer_day:      day,
   });
 }
 
