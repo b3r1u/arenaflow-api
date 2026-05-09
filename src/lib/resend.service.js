@@ -56,4 +56,94 @@ async function sendSupportEmail({ establishmentName, senderEmail, message }) {
   });
 }
 
-module.exports = { sendSupportEmail };
+/**
+ * Envia email de confirmação de reserva para o cliente.
+ * @param {object} opts
+ * @param {string} opts.clientEmail    - Email do cliente
+ * @param {string} opts.clientName     - Nome do cliente
+ * @param {string} opts.arenaName      - Nome da arena
+ * @param {string} opts.courtName      - Nome da quadra
+ * @param {string} opts.date           - Data da reserva (YYYY-MM-DD)
+ * @param {string} opts.startHour      - Hora início (HH:00)
+ * @param {string} opts.endHour        - Hora fim (HH:00)
+ * @param {number} opts.totalAmount    - Valor total pago
+ */
+async function sendBookingConfirmationEmail({ clientEmail, clientName, arenaName, courtName, date, startHour, endHour, totalAmount }) {
+  const from = 'ArenaFlow <onboarding@resend.dev>';
+
+  // Formata data: YYYY-MM-DD → DD/MM/YYYY
+  const [year, month, day] = date.split('-');
+  const dateFormatted = `${day}/${month}/${year}`;
+
+  const amountFormatted = Number(totalAmount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#f9fafb;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb">
+
+      <!-- Header -->
+      <div style="background:linear-gradient(135deg,#16a34a,#15803d);padding:28px">
+        <div style="display:inline-block;background:rgba(255,255,255,0.15);border-radius:50%;width:48px;height:48px;text-align:center;line-height:48px;font-size:24px;margin-bottom:12px">✅</div>
+        <h1 style="margin:0;color:white;font-size:22px;font-weight:700">Reserva confirmada!</h1>
+        <p style="margin:6px 0 0;color:rgba(255,255,255,0.85);font-size:14px">Seu pagamento foi recebido com sucesso.</p>
+      </div>
+
+      <!-- Body -->
+      <div style="padding:28px">
+
+        <p style="margin:0 0 20px;font-size:15px;color:#374151">Olá, <strong>${clientName}</strong>! Sua reserva está confirmada. Veja os detalhes abaixo:</p>
+
+        <!-- Card de detalhes -->
+        <div style="background:white;border-radius:10px;border:1px solid #e5e7eb;overflow:hidden;margin-bottom:20px">
+
+          <div style="background:#f0fdf4;padding:14px 20px;border-bottom:1px solid #e5e7eb">
+            <p style="margin:0;font-size:13px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:0.05em">📍 ${arenaName}</p>
+          </div>
+
+          <div style="padding:20px;display:grid;gap:14px">
+
+            <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:12px;border-bottom:1px solid #f3f4f6">
+              <span style="font-size:13px;color:#6b7280">Quadra</span>
+              <span style="font-size:14px;font-weight:600;color:#111827">${courtName}</span>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:12px;border-bottom:1px solid #f3f4f6">
+              <span style="font-size:13px;color:#6b7280">Data</span>
+              <span style="font-size:14px;font-weight:600;color:#111827">${dateFormatted}</span>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:12px;border-bottom:1px solid #f3f4f6">
+              <span style="font-size:13px;color:#6b7280">Horário</span>
+              <span style="font-size:14px;font-weight:600;color:#111827">${startHour} – ${endHour}</span>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span style="font-size:13px;color:#6b7280">Total pago</span>
+              <span style="font-size:16px;font-weight:700;color:#16a34a">${amountFormatted}</span>
+            </div>
+
+          </div>
+        </div>
+
+        <p style="margin:0;font-size:13px;color:#6b7280;line-height:1.6">
+          Guarde este email como comprovante. Em caso de dúvidas, entre em contato com a arena diretamente.
+        </p>
+
+      </div>
+
+      <!-- Footer -->
+      <div style="padding:16px 28px;background:#f3f4f6;border-top:1px solid #e5e7eb;text-align:center">
+        <p style="margin:0;font-size:11px;color:#9ca3af">ArenaFlow · ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</p>
+      </div>
+
+    </div>
+  `;
+
+  return resend.emails.send({
+    from,
+    to:      clientEmail,
+    subject: `✅ Reserva confirmada — ${arenaName} · ${dateFormatted} ${startHour}`,
+    html,
+  });
+}
+
+module.exports = { sendSupportEmail, sendBookingConfirmationEmail };

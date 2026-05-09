@@ -1,4 +1,34 @@
-const prisma = require('../lib/prisma');
+const prisma                              = require('../lib/prisma');
+const { sendBookingConfirmationEmail }    = require('../lib/resend.service');
+
+/** Busca o email do cliente pelo Firebase UID e dispara o email de confirmação */
+async function notifyBookingPaid(booking, courtIncluded) {
+  try {
+    const user = await prisma.user.findFirst({ where: { firebase_uid: booking.user_uid } });
+    if (!user?.email) return;
+
+    // Carrega quadra + estabelecimento se não vieram no include
+    const court = courtIncluded || await prisma.court.findUnique({
+      where:   { id: booking.court_id },
+      include: { establishment: true },
+    });
+
+    await sendBookingConfirmationEmail({
+      clientEmail:  user.email,
+      clientName:   booking.client_name,
+      arenaName:    court?.establishment?.name || 'Arena',
+      courtName:    court?.name || 'Quadra',
+      date:         booking.date,
+      startHour:    booking.start_hour,
+      endHour:      booking.end_hour,
+      totalAmount:  booking.total_amount,
+    });
+    console.log(`[WEBHOOK] Email de confirmação enviado para ${user.email} (booking ${booking.id})`);
+  } catch (err) {
+    // Nunca deixa o email quebrar o fluxo principal
+    console.error('[WEBHOOK] Erro ao enviar email de confirmação:', err.message);
+  }
+}
 
 /**
  * POST /api/webhook/pagarme
@@ -95,6 +125,7 @@ async function pagarmeWebhook(req, res) {
             },
           });
           console.log(`[WEBHOOK] charge.paid → booking ${booking.id} (payment_option=${booking.payment_option}, era ${booking.payment_status}) → ${newStatus} | paid=R$${newPaidAmount}`);
+          if (newStatus === 'PAGO') await notifyBookingPaid(booking, null);
           return;
         }
 
@@ -151,6 +182,10 @@ async function pagarmeWebhook(req, res) {
       });
 
       console.log(`[WEBHOOK] Split ${split.id} (${split.player_name}) → PAGO | Reserva ${booking.id} → ${bookingStatus}`);
+      if (bookingStatus === 'PAGO') {
+        const court = await prisma.court.findUnique({ where: { id: booking.court_id }, include: { establishment: true } });
+        await notifyBookingPaid(booking, court);
+      }
       return;
     }
 
@@ -189,6 +224,7 @@ async function pagarmeWebhook(req, res) {
       });
 
       console.log(`[WEBHOOK] order.paid → booking ${booking.id} (${booking.payment_option}%) → ${newStatus}`);
+      if (newStatus === 'PAGO') await notifyBookingPaid(booking, null);
       return;
     }
 
