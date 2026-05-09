@@ -11,7 +11,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
  */
 async function sendSupportEmail({ establishmentName, senderEmail, message }) {
   const to   = process.env.SUPPORT_EMAIL || 'connectsolve.ti@gmail.com';
-  const from = 'Suporte ArenaFlow <onboarding@resend.dev>';
+  const from = 'Suporte ArenaFlow <noreply@arenaflow.site>';
 
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#f9fafb;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb">
@@ -69,7 +69,7 @@ async function sendSupportEmail({ establishmentName, senderEmail, message }) {
  * @param {number} opts.totalAmount    - Valor total pago
  */
 async function sendBookingConfirmationEmail({ clientEmail, clientName, arenaName, courtName, date, startHour, endHour, totalAmount }) {
-  const from = 'ArenaFlow <onboarding@resend.dev>';
+  const from = 'ArenaFlow <noreply@arenaflow.site>';
 
   // Formata data: YYYY-MM-DD → DD/MM/YYYY
   const [year, month, day] = date.split('-');
