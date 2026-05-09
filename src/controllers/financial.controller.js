@@ -1,6 +1,6 @@
 const prisma                                         = require('../lib/prisma');
 const { encrypt, decrypt, maskDocument, maskPixKey } = require('../lib/crypto');
-const { createRecipient, getRecipient }              = require('../lib/pagarme.service');
+const { createRecipient, getRecipient, updateRecipientTransferSettings } = require('../lib/pagarme.service');
 
 function toPublic(f) {
   return {
@@ -13,6 +13,8 @@ function toPublic(f) {
     pagarme_recipient_id:  f.pagarme_recipient_id,
     bank_registered:       !!f.bank_registered_at,
     lgpd_consent_at:       f.lgpd_consent_at,
+    transfer_interval:     f.transfer_interval ?? 'Daily',
+    transfer_day:          f.transfer_day      ?? 0,
     created_at:            f.created_at,
     updated_at:            f.updated_at,
   };
@@ -229,4 +231,49 @@ async function getFinancialForm(req, res, next) {
   } catch (err) { next(err); }
 }
 
-module.exports = { getFinancial, saveFinancial, saveBankAccount, getRecipientStatus, getFinancialForm };
+// PUT /api/financial/transfer-settings
+async function updateTransferSettings(req, res, next) {
+  try {
+    const { interval, day } = req.body;
+
+    const VALID_INTERVALS = ['Daily', 'Weekly', 'Monthly'];
+    if (!VALID_INTERVALS.includes(interval)) {
+      return res.status(400).json({ error: 'Intervalo inválido. Use: Daily, Weekly ou Monthly' });
+    }
+
+    const dayNum = parseInt(day ?? 0, 10);
+    if (interval === 'Weekly'  && (dayNum < 1 || dayNum > 5)) {
+      return res.status(400).json({ error: 'Para saques semanais, informe um dia entre 1 (seg) e 5 (sex)' });
+    }
+    if (interval === 'Monthly' && (dayNum < 1 || dayNum > 31)) {
+      return res.status(400).json({ error: 'Para saques mensais, informe um dia entre 1 e 31' });
+    }
+
+    const est = await prisma.establishment.findUnique({
+      where:   { owner_id: req.user.id },
+      include: { financial: true },
+    });
+    if (!est?.financial)                     return res.status(404).json({ error: 'Dados financeiros não encontrados' });
+    if (!est.financial.pagarme_recipient_id) return res.status(400).json({ error: 'Recebedor ainda não cadastrado no Pagar.me' });
+
+    // Atualiza no Pagar.me
+    await updateRecipientTransferSettings(est.financial.pagarme_recipient_id, {
+      interval,
+      day: interval === 'Daily' ? 0 : dayNum,
+    });
+
+    // Salva localmente
+    await prisma.financialInfo.update({
+      where: { id: est.financial.id },
+      data:  { transfer_interval: interval, transfer_day: interval === 'Daily' ? 0 : dayNum },
+    });
+
+    console.log(`[TRANSFER-SETTINGS] ${est.id} → interval=${interval} day=${dayNum}`);
+    res.json({ success: true, interval, day: dayNum });
+  } catch (err) {
+    if (err.message) return res.status(400).json({ error: err.message });
+    next(err);
+  }
+}
+
+module.exports = { getFinancial, saveFinancial, saveBankAccount, getRecipientStatus, getFinancialForm, updateTransferSettings };

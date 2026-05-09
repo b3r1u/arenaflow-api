@@ -148,6 +148,10 @@ model FinancialInfo {
   bank_registered_at        DateTime?                // data em que o recebedor foi criado no Pagar.me
   status               FinancialStatus @default(PENDING_REVIEW)
 
+  // Configuração de saque automático
+  transfer_interval    String   @default("Daily")   // "Daily" | "Weekly" | "Monthly"
+  transfer_day         Int      @default(0)          // 0=diário | 1-5=dia da semana | 1-31=dia do mês
+
   // LGPD — Rastreabilidade do consentimento
   lgpd_consent_at      DateTime                      // Timestamp do aceite
   lgpd_purpose         String          @default("Processamento de pagamentos para reservas de quadras esportivas")

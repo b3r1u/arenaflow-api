@@ -183,6 +183,21 @@ async function getRecipient(recipientId) {
 }
 
 /**
+ * Atualiza as configurações de transferência automática de um recebedor.
+ * @param {string} recipientId
+ * @param {{ interval: 'Daily'|'Weekly'|'Monthly', day: number }} settings
+ */
+async function updateRecipientTransferSettings(recipientId, { interval, day }) {
+  return request('PATCH', `/recipients/${recipientId}`, {
+    transfer_settings: {
+      transfer_enabled:  true,
+      transfer_interval: interval,
+      transfer_day:      day,
+    },
+  });
+}
+
+/**
  * Cria um pedido PIX no Pagar.me com split para o recebedor da arena.
  * amountCents: valor em centavos (ex: 10000 = R$100,00)
  * recipientId: pagarme_recipient_id do estabelecimento
@@ -512,7 +527,7 @@ async function getSubscription(subscriptionId) {
 }
 
 module.exports = {
-  createRecipient, getRecipient,
+  createRecipient, getRecipient, updateRecipientTransferSettings,
   createOrder, createPlayerPixOrder,
   getCharge, cancelCharge,
   createPlan, getPlan,
