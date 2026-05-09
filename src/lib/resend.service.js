@@ -99,29 +99,24 @@ async function sendBookingConfirmationEmail({ clientEmail, clientName, arenaName
             <p style="margin:0;font-size:13px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:0.05em">📍 ${arenaName}</p>
           </div>
 
-          <div style="padding:24px;display:grid;gap:0">
-
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid #f3f4f6">
-              <span style="font-size:13px;color:#6b7280;font-weight:500">Quadra</span>
-              <span style="font-size:14px;font-weight:600;color:#111827">${courtName}</span>
-            </div>
-
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid #f3f4f6">
-              <span style="font-size:13px;color:#6b7280;font-weight:500">Data</span>
-              <span style="font-size:14px;font-weight:600;color:#111827">${dateFormatted}</span>
-            </div>
-
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid #f3f4f6">
-              <span style="font-size:13px;color:#6b7280;font-weight:500">Horário</span>
-              <span style="font-size:14px;font-weight:600;color:#111827">${startHour} – ${endHour}</span>
-            </div>
-
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 0">
-              <span style="font-size:13px;color:#6b7280;font-weight:500">Total pago</span>
-              <span style="font-size:16px;font-weight:700;color:#16a34a">${amountFormatted}</span>
-            </div>
-
-          </div>
+          <table style="width:100%;border-collapse:collapse;padding:8px 24px 8px;display:block;box-sizing:border-box">
+            <tr style="border-bottom:1px solid #f3f4f6">
+              <td style="padding:14px 24px 14px 24px;font-size:13px;color:#6b7280;font-weight:500;white-space:nowrap;width:40%">Quadra</td>
+              <td style="padding:14px 24px 14px 0;font-size:14px;font-weight:600;color:#111827;text-align:right">${courtName}</td>
+            </tr>
+            <tr style="border-bottom:1px solid #f3f4f6">
+              <td style="padding:14px 24px 14px 24px;font-size:13px;color:#6b7280;font-weight:500;white-space:nowrap">Data</td>
+              <td style="padding:14px 24px 14px 0;font-size:14px;font-weight:600;color:#111827;text-align:right">${dateFormatted}</td>
+            </tr>
+            <tr style="border-bottom:1px solid #f3f4f6">
+              <td style="padding:14px 24px 14px 24px;font-size:13px;color:#6b7280;font-weight:500;white-space:nowrap">Horário</td>
+              <td style="padding:14px 24px 14px 0;font-size:14px;font-weight:600;color:#111827;text-align:right">${startHour} – ${endHour}</td>
+            </tr>
+            <tr>
+              <td style="padding:14px 24px 14px 24px;font-size:13px;color:#6b7280;font-weight:500;white-space:nowrap">Total pago</td>
+              <td style="padding:14px 24px 14px 0;font-size:16px;font-weight:700;color:#16a34a;text-align:right">${amountFormatted}</td>
+            </tr>
+          </table>
         </div>
 
         <p style="margin:0;font-size:13px;color:#6b7280;line-height:1.6">
