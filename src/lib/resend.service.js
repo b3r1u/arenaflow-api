@@ -102,19 +102,19 @@ async function sendBookingConfirmationEmail({ clientEmail, clientName, arenaName
           <table style="width:100%;border-collapse:collapse;padding:8px 24px 8px;display:block;box-sizing:border-box">
             <tr style="border-bottom:1px solid #f3f4f6">
               <td style="padding:14px 24px 14px 24px;font-size:13px;color:#6b7280;font-weight:500;white-space:nowrap;width:40%">Quadra</td>
-              <td style="padding:14px 24px 14px 0;font-size:14px;font-weight:600;color:#111827;text-align:right">${courtName}</td>
+              <td style="padding:14px 24px 14px 0;font-size:14px;font-weight:600;color:#111827;text-align:left">${courtName}</td>
             </tr>
             <tr style="border-bottom:1px solid #f3f4f6">
               <td style="padding:14px 24px 14px 24px;font-size:13px;color:#6b7280;font-weight:500;white-space:nowrap">Data</td>
-              <td style="padding:14px 24px 14px 0;font-size:14px;font-weight:600;color:#111827;text-align:right">${dateFormatted}</td>
+              <td style="padding:14px 24px 14px 0;font-size:14px;font-weight:600;color:#111827;text-align:left">${dateFormatted}</td>
             </tr>
             <tr style="border-bottom:1px solid #f3f4f6">
               <td style="padding:14px 24px 14px 24px;font-size:13px;color:#6b7280;font-weight:500;white-space:nowrap">Horário</td>
-              <td style="padding:14px 24px 14px 0;font-size:14px;font-weight:600;color:#111827;text-align:right">${startHour} – ${endHour}</td>
+              <td style="padding:14px 24px 14px 0;font-size:14px;font-weight:600;color:#111827;text-align:left">${startHour} – ${endHour}</td>
             </tr>
             <tr>
               <td style="padding:14px 24px 14px 24px;font-size:13px;color:#6b7280;font-weight:500;white-space:nowrap">Total pago</td>
-              <td style="padding:14px 24px 14px 0;font-size:16px;font-weight:700;color:#16a34a;text-align:right">${amountFormatted}</td>
+              <td style="padding:14px 24px 14px 0;font-size:16px;font-weight:700;color:#16a34a;text-align:left">${amountFormatted}</td>
             </tr>
           </table>
         </div>
