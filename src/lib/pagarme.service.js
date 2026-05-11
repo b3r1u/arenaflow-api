@@ -1,5 +1,50 @@
 const https = require('https');
 
+// ─── Mascaramento de dados sensíveis nos logs (C3) ────────────────────────────
+// Campos que NUNCA devem aparecer em texto claro em logs
+const SENSITIVE_FIELDS = new Set([
+  'document', 'cpf', 'cnpj', 'number', 'cvv', 'holder_document',
+  'account_number', 'branch_number', 'branch_check_digit', 'account_check_digit',
+  'holder_name', 'email', 'ddd', 'phone',
+]);
+
+function maskValue(key, value) {
+  if (typeof value !== 'string' || value.length < 3) return '***';
+  if (key === 'email') {
+    const [u, d] = value.split('@');
+    return d ? `${u.slice(0, 2)}***@${d}` : '***';
+  }
+  if (key === 'number' && value.length >= 12) {
+    // Número de cartão: mostra últimos 4
+    return `****${value.slice(-4)}`;
+  }
+  // Documentos e demais: mostra primeiros 3 + ***
+  return `${value.slice(0, 3)}***`;
+}
+
+function maskObject(obj) {
+  if (typeof obj !== 'object' || obj === null) return obj;
+  if (Array.isArray(obj)) return obj.map(maskObject);
+  return Object.fromEntries(
+    Object.entries(obj).map(([k, v]) => [
+      k,
+      SENSITIVE_FIELDS.has(k.toLowerCase()) ? maskValue(k.toLowerCase(), String(v)) : maskObject(v),
+    ])
+  );
+}
+
+function safeLog(method, path, statusCode, rawJson) {
+  try {
+    const parsed  = JSON.parse(rawJson);
+    const masked  = maskObject(parsed);
+    const preview = JSON.stringify(masked).slice(0, 400);
+    console.log(`[PAGARME] ${method} ${path} → ${statusCode} | ${preview}`);
+  } catch {
+    // Resposta não-JSON (ex: HTML de erro 5xx do gateway)
+    console.log(`[PAGARME] ${method} ${path} → ${statusCode} | (resposta não-JSON, ${rawJson.length} bytes)`);
+  }
+}
+
 function getBaseUrl() {
   // Pagar.me V5 usa o mesmo endpoint para sandbox e produção.
   // O ambiente é diferenciado pelo prefixo da chave: sk_test_... (sandbox) ou sk_live_... (produção).
@@ -35,16 +80,16 @@ function request(method, path, body) {
       let raw = '';
       res.on('data', chunk => raw += chunk);
       res.on('end', () => {
-        const preview = raw.slice(0, 400) || '(vazio)';
-        console.log(`[PAGARME] ${method} ${path} → ${res.statusCode} | ${preview}`);
         if (!raw.trim()) {
+          console.log(`[PAGARME] ${method} ${path} → ${res.statusCode} | (sem body)`);
           if (res.statusCode >= 400) return reject(new Error(`Pagar.me error ${res.statusCode}`));
           return resolve({});
         }
         try {
           const json = JSON.parse(raw);
+          // Loga versão mascarada — sem CPF, e-mail, dados de cartão ou conta (C3)
+          safeLog(method, path, res.statusCode, raw);
           if (res.statusCode >= 400) {
-            console.error('[PAGARME] Erro detalhado:', JSON.stringify(json, null, 2));
             const errors = Array.isArray(json?.errors)
               ? json.errors.map(e => e.message || JSON.stringify(e)).join(' | ')
               : null;
@@ -53,7 +98,7 @@ function request(method, path, body) {
           }
           resolve(json);
         } catch {
-          reject(new Error(`Pagar.me resposta inválida (${res.statusCode}): ${raw.slice(0, 300)}`));
+          reject(new Error(`Pagar.me resposta inválida (${res.statusCode}): ${raw.length} bytes`));
         }
       });
     });
@@ -226,13 +271,13 @@ async function createOrder({
         number:       '999999999',
       };
 
-  // CPF sandbox válido usado como fallback quando o cliente não informa documento.
-  // O gateway Pagar.me rejeita CPFs inválidos (ex: 00000000000) com action_forbidden.
-  const CPF_PLACEHOLDER = '52998224725';
+  // Valida CPF — Pagar.me rejeita CPFs inválidos com action_forbidden (C5)
   const rawDoc = (customerDocument || '').replace(/\D/g, '');
-  // Considera inválido: vazio, todo igual (00000.../ 11111...) ou tamanho != 11
   const isInvalidCpf = !rawDoc || rawDoc.length !== 11 || /^(\d)\1+$/.test(rawDoc);
-  const customerDoc  = isInvalidCpf ? CPF_PLACEHOLDER : rawDoc;
+  if (isInvalidCpf) {
+    throw new Error('CPF do cliente inválido ou não informado. Solicite o CPF antes de gerar o pagamento.');
+  }
+  const customerDoc = rawDoc;
 
   const payload = {
     items: [{
@@ -324,7 +369,13 @@ async function createPlayerPixOrder({
   commissionPct = 0,
   arenaflowRecipientId = null,
 }) {
-  const doc = (playerDocument || '00000000000').replace(/\D/g, '').padEnd(11, '0').slice(0, 11);
+  // Valida CPF do jogador — não aceita placeholder ou CPF inválido (C5)
+  const rawPlayerDoc   = (playerDocument || '').replace(/\D/g, '');
+  const playerDocInvalid = !rawPlayerDoc || rawPlayerDoc.length !== 11 || /^(\d)\1+$/.test(rawPlayerDoc);
+  if (playerDocInvalid) {
+    throw new Error('CPF do jogador inválido ou não informado. Solicite o CPF antes de gerar o Pix.');
+  }
+  const doc = rawPlayerDoc;
 
   const payload = {
     items: [{

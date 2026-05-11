@@ -1,6 +1,7 @@
-const express = require('express');
-const cors    = require('cors');
-const routes  = require('./routes');
+const express   = require('express');
+const cors      = require('cors');
+const rateLimit = require('express-rate-limit');
+const routes    = require('./routes');
 
 const app = express();
 
@@ -32,9 +33,58 @@ app.use((req, res, next) => {
 });
 
 // ─── Body parsing ─────────────────────────────────────────────────────────────
-// Limite de 10 MB para suportar imagens em base64 no logo_url
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Captura rawBody para validação HMAC em webhooks (C2)
+// Limite reduzido de 10 MB → 500 KB; imagens de logo devem usar URL externa (M2)
+app.use(express.json({
+  limit: '500kb',
+  verify: (req, _res, buf) => { req.rawBody = buf; },
+}));
+app.use(express.urlencoded({ extended: true, limit: '500kb' }));
+
+// ─── Rate Limiting (C4) ───────────────────────────────────────────────────────
+const rateLimitMessage = { error: 'Muitas requisições. Tente novamente em alguns instantes.' };
+
+// Geral: 200 req / 15 min por IP
+const generalLimiter = rateLimit({
+  windowMs:        15 * 60 * 1000,
+  max:             200,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message:         rateLimitMessage,
+});
+
+// Auth (login, registro): 15 req / 15 min por IP — proteção contra brute-force
+const authLimiter = rateLimit({
+  windowMs:        15 * 60 * 1000,
+  max:             15,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message:         rateLimitMessage,
+});
+
+// Pagamentos (criação de ordem Pix): 30 req / 15 min por IP
+const paymentLimiter = rateLimit({
+  windowMs:        15 * 60 * 1000,
+  max:             30,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message:         rateLimitMessage,
+});
+
+// Webhook Pagar.me: 120 req / 15 min (Pagar.me pode reenviar eventos)
+const webhookLimiter = rateLimit({
+  windowMs:        15 * 60 * 1000,
+  max:             120,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message:         rateLimitMessage,
+});
+
+app.use('/api/auth',              authLimiter);
+app.use('/api/webhook',           webhookLimiter);
+app.use('/api/bookings',          paymentLimiter);
+app.use('/api/pagamento',         paymentLimiter);
+app.use('/api',                   generalLimiter);
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {

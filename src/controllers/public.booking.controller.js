@@ -67,8 +67,9 @@ async function getPublicBooking(req, res) {
     });
 
   } catch (err) {
+    // Loga detalhe internamente; nunca expõe estrutura do banco ao cliente (C6)
     console.error('[PUBLIC_BOOKING]', err.message);
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: 'Erro ao buscar reserva. Tente novamente.' });
   }
 }
 

@@ -98,10 +98,14 @@ async function authenticateClient(req, res, next) {
  * Garante que o usuário autenticado é o administrador da plataforma (dono do ArenaFlow).
  * Deve ser usado após `authenticate`.
  */
-const PLATFORM_ADMIN_EMAIL = 'connectsolve.ti@gmail.com';
-
+// Email do admin da plataforma lido do ambiente — nunca hardcoded no código (H2)
 function requirePlatformAdmin(req, res, next) {
-  if (req.user?.email !== PLATFORM_ADMIN_EMAIL) {
+  const adminEmail = process.env.PLATFORM_ADMIN_EMAIL;
+  if (!adminEmail) {
+    console.error('[AUTH] PLATFORM_ADMIN_EMAIL não configurado');
+    return res.status(503).json({ error: 'Configuração de servidor incompleta' });
+  }
+  if (req.user?.email !== adminEmail) {
     return res.status(403).json({ error: 'Acesso restrito ao administrador da plataforma' });
   }
   next();
