@@ -1,5 +1,6 @@
 const admin  = require('../config/firebase');
 const prisma = require('../lib/prisma');
+const crypto = require('crypto');
 
 /**
  * Verifica o Firebase ID Token enviado no header Authorization.
@@ -99,13 +100,23 @@ async function authenticateClient(req, res, next) {
  * Deve ser usado após `authenticate`.
  */
 // Email do admin da plataforma lido do ambiente — nunca hardcoded no código (H2)
+// Comparação via timingSafeEqual para evitar timing attacks (M5)
 function requirePlatformAdmin(req, res, next) {
   const adminEmail = process.env.PLATFORM_ADMIN_EMAIL;
   if (!adminEmail) {
     console.error('[AUTH] PLATFORM_ADMIN_EMAIL não configurado');
     return res.status(503).json({ error: 'Configuração de servidor incompleta' });
   }
-  if (req.user?.email !== adminEmail) {
+
+  const userEmail = req.user?.email || '';
+  const bufUser   = Buffer.from(userEmail);
+  const bufAdmin  = Buffer.from(adminEmail);
+
+  // timingSafeEqual exige buffers de mesmo tamanho
+  const isMatch = bufUser.length === bufAdmin.length &&
+    crypto.timingSafeEqual(bufUser, bufAdmin);
+
+  if (!isMatch) {
     return res.status(403).json({ error: 'Acesso restrito ao administrador da plataforma' });
   }
   next();

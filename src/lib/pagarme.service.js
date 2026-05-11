@@ -257,6 +257,12 @@ async function createOrder({
   commissionPct = 0,
   arenaflowRecipientId = null,
 }) {
+  // Valida range do commissionPct — protege contra adulteração do banco (H3)
+  const pct = Number(commissionPct);
+  if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+    throw new Error(`commissionPct inválido: ${commissionPct}. Deve ser entre 0 e 100.`);
+  }
+
   // Parse phone para formato Pagar.me. Fallback para número sandbox válido.
   const phoneDigits = (customerPhone || '').replace(/\D/g, '');
   const mobilePhone = phoneDigits.length >= 10
@@ -369,6 +375,12 @@ async function createPlayerPixOrder({
   commissionPct = 0,
   arenaflowRecipientId = null,
 }) {
+  // Valida range do commissionPct (H3)
+  const playerPct = Number(commissionPct);
+  if (!Number.isFinite(playerPct) || playerPct < 0 || playerPct > 100) {
+    throw new Error(`commissionPct inválido: ${commissionPct}. Deve ser entre 0 e 100.`);
+  }
+
   // Valida CPF do jogador — não aceita placeholder ou CPF inválido (C5)
   const rawPlayerDoc   = (playerDocument || '').replace(/\D/g, '');
   const playerDocInvalid = !rawPlayerDoc || rawPlayerDoc.length !== 11 || /^(\d)\1+$/.test(rawPlayerDoc);

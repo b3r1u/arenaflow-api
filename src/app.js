@@ -1,19 +1,34 @@
 const express   = require('express');
 const cors      = require('cors');
+const helmet    = require('helmet');
 const rateLimit = require('express-rate-limit');
 const routes    = require('./routes');
 
 const app = express();
+const isProd = process.env.NODE_ENV === 'production';
 
-// ─── CORS ─────────────────────────────────────────────────────────────────────
+// ─── Helmet — headers de segurança HTTP (M1) ──────────────────────────────────
+app.use(helmet({
+  // CSP desabilitado: a API só retorna JSON, não HTML
+  contentSecurityPolicy: false,
+}));
+
+// ─── CORS (M4) ────────────────────────────────────────────────────────────────
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:4200,http://localhost:4201,http://localhost:4300')
   .split(',')
   .map(o => o.trim());
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Permite requests sem origin (ex: Postman, curl) e origens listadas
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    // Webhook Pagar.me é server-to-server: sem Origin → sempre permitido
+    // Em dev: sem Origin também permitido (Postman, curl)
+    // Em produção: sem Origin bloqueado para rotas não-webhook
+    if (!origin) {
+      return isProd
+        ? callback(new Error('Requisições sem Origin não são permitidas em produção'))
+        : callback(null, true);
+    }
+    if (allowedOrigins.includes(origin)) return callback(null, true);
     callback(new Error(`Origem não permitida pelo CORS: ${origin}`));
   },
   credentials: true,
@@ -22,6 +37,8 @@ const corsOptions = {
   optionsSuccessStatus: 204,
 };
 
+// Webhook bypassa CORS — Pagar.me não envia header Origin
+app.use('/api/webhook', cors({ origin: '*' }));
 app.use(cors(corsOptions));
 
 // Responde explicitamente a qualquer preflight OPTIONS antes das rotas/auth
@@ -99,11 +116,19 @@ app.use((_req, res) => {
   res.status(404).json({ error: 'Rota não encontrada' });
 });
 
-// ─── Error handler ────────────────────────────────────────────────────────────
+// ─── Error handler (H1 + M6) ─────────────────────────────────────────────────
+// Em produção: mensagem genérica ao cliente, detalhe apenas no log interno
+// Em desenvolvimento: mensagem completa + stack trace para facilitar debug
 app.use((err, _req, res, _next) => {
-  console.error('[ERROR]', err.message);
   const status = err.status || 500;
-  res.status(status).json({ error: err.message || 'Erro interno do servidor' });
+  console.error(`[ERROR] ${status}`, err.message);
+  if (!isProd) console.error(err.stack);
+
+  const body = isProd
+    ? { error: status < 500 ? err.message : 'Erro interno do servidor' }
+    : { error: err.message, stack: err.stack };
+
+  res.status(status).json(body);
 });
 
 module.exports = app;
