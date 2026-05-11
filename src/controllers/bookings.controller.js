@@ -1,5 +1,6 @@
 const prisma  = require('../lib/prisma');
 const { createOrder, cancelCharge, getCharge } = require('../lib/pagarme.service');
+const { auditLog } = require('../lib/audit.service');
 
 /* ── Helpers de cancelamento ─────────────────────────────────────────────── */
 
@@ -69,6 +70,26 @@ async function create(req, res) {
 
   if (!arena_id || !court_id || !date || !start_hour || !end_hour || !client_name) {
     return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
+  }
+
+  // ── Validações de range (L2) ───────────────────────────────────────────────
+  // Data no passado
+  const bookingDate = new Date(date + 'T00:00:00');
+  const today       = new Date(); today.setHours(0, 0, 0, 0);
+  if (bookingDate < today) {
+    return res.status(400).json({ error: 'Não é possível reservar uma data no passado' });
+  }
+
+  // Horário inválido: end <= start
+  const startH = parseInt(start_hour, 10);
+  const endH   = parseInt(end_hour,   10);
+  if (isNaN(startH) || isNaN(endH) || endH <= startH) {
+    return res.status(400).json({ error: 'Horário de término deve ser posterior ao de início' });
+  }
+
+  // Duração máxima de 12 horas por reserva avulsa
+  if (endH - startH > 12) {
+    return res.status(400).json({ error: 'Duração máxima por reserva é 12 horas' });
   }
 
   try {
@@ -572,6 +593,12 @@ async function cancel(req, res) {
 
     const refundAmountCents = Math.round(info.refund_amount * 100);
 
+    auditLog('booking.cancelled', req.user?.firebase_uid || 'unknown', booking.id, {
+      reason:             info.reason,
+      fee_amount:         info.fee_amount,
+      refund_amount:      info.refund_amount,
+      pagarme_requested:  pagarmeRefundRequested,
+    });
     console.log(`[BOOKINGS/CANCEL] ${booking.id} → CANCELADO | reason=${info.reason} | fee=R$${info.fee_amount} | refund=R$${info.refund_amount} | pagarme_requested=${pagarmeRefundRequested}`);
 
     return res.json({

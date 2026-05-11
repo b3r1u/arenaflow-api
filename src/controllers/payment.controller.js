@@ -1,5 +1,6 @@
 const prisma  = require('../lib/prisma');
 const { createPlayerPixOrder, getCharge } = require('../lib/pagarme.service');
+const { auditLog } = require('../lib/audit.service');
 
 /**
  * POST /api/bookings/:id/payment-group
@@ -117,23 +118,11 @@ async function createPaymentGroup(req, res) {
       });
     }
 
-    // 3. Cria o grupo no banco
-    const group = await prisma.bookingPaymentGroup.create({
-      data: {
-        booking_id:   bookingId,
-        payment_type,
-        total_amount: payment_type === 'SPLIT' ? totalCents : Math.round(totalCents / 2),
-        paid_amount:  0,
-        status:       'PENDENTE',
-      },
-    });
-
-    // 4. Para cada cota: chama o Pagar.me e salva no banco
-    const splitResults = [];
-
+    // 3. Chama o Pagar.me para TODAS as cotas antes de tocar no banco (L1)
+    //    Se o Pagar.me falhar, nenhum registro órfão fica no banco.
+    const pixResults = [];
     for (const item of splitItems) {
       let pixData = { orderId: null, chargeId: null, qrCode: null, qrCopyPaste: null, expiresAt: null };
-
       try {
         pixData = await createPlayerPixOrder({
           amountCents:    item.amount,
@@ -147,47 +136,75 @@ async function createPaymentGroup(req, res) {
         });
       } catch (pixErr) {
         console.error(`[PAYMENT] Erro ao criar Pix para ${item.player_name}:`, pixErr.message);
-        // Continua — registra a cota sem Pix, pode ser retentado depois
+        // Continua sem Pix — cota pode ser regenerada depois via /regenerate
       }
+      pixResults.push(pixData);
+    }
 
-      const split = await prisma.bookingPaymentSplit.create({
+    // 4. Persiste grupo + cotas + booking em transação atômica (L1)
+    //    Usa callback para ter acesso ao group.id ao criar as splits.
+    const groupTotalAmount = payment_type === 'SPLIT' ? totalCents : Math.round(totalCents / 2);
+
+    const { finalGroup, finalSplits } = await prisma.$transaction(async (tx) => {
+      const g = await tx.bookingPaymentGroup.create({
         data: {
-          group_id:          group.id,
-          player_name:       item.player_name,
-          amount:            item.amount,
-          pagarme_order_id:  pixData.orderId,
-          pagarme_charge_id: pixData.chargeId,
-          pix_qr_code:       pixData.qrCode,
-          pix_copy_paste:    pixData.qrCopyPaste,
-          pix_expires_at:    pixData.expiresAt ? new Date(pixData.expiresAt) : null,
-          status:            'PENDENTE',
+          booking_id:   bookingId,
+          payment_type,
+          total_amount: groupTotalAmount,
+          paid_amount:  0,
+          status:       'PENDENTE',
         },
       });
 
-      splitResults.push(split);
-    }
+      const splits = [];
+      for (let i = 0; i < splitItems.length; i++) {
+        const item = splitItems[i];
+        const pix  = pixResults[i];
+        splits.push(await tx.bookingPaymentSplit.create({
+          data: {
+            group_id:          g.id,
+            player_name:       item.player_name,
+            amount:            item.amount,
+            pagarme_order_id:  pix.orderId    || null,
+            pagarme_charge_id: pix.chargeId   || null,
+            pix_qr_code:       pix.qrCode     || null,
+            pix_copy_paste:    pix.qrCopyPaste || null,
+            pix_expires_at:    pix.expiresAt ? new Date(pix.expiresAt) : null,
+            status:            'PENDENTE',
+          },
+        }));
+      }
 
-    // 5. Atualiza status da reserva para PENDENTE (aguardando pagamento)
-    await prisma.booking.update({
-      where: { id: bookingId },
-      data:  { payment_status: 'PENDENTE' },
+      await tx.booking.update({
+        where: { id: bookingId },
+        data:  { payment_status: 'PENDENTE' },
+      });
+
+      return { finalGroup: g, finalSplits: splits };
+    });
+
+    auditLog('payment_group.created', req.user?.firebase_uid || 'unknown', finalGroup.id, {
+      booking_id:   bookingId,
+      payment_type,
+      total_cents:  groupTotalAmount,
+      num_splits:   finalSplits.length,
     });
 
     return res.status(201).json({
       group: {
-        id:           group.id,
-        payment_type: group.payment_type,
-        total_amount: group.total_amount,
-        paid_amount:  group.paid_amount,
-        status:       group.status,
-        splits:       splitResults.map(s => ({
-          id:            s.id,
-          player_name:   s.player_name,
-          amount:        s.amount,
-          pix_qr_code:   s.pix_qr_code,
+        id:           finalGroup.id,
+        payment_type: finalGroup.payment_type,
+        total_amount: finalGroup.total_amount,
+        paid_amount:  finalGroup.paid_amount,
+        status:       finalGroup.status,
+        splits:       finalSplits.map(s => ({
+          id:             s.id,
+          player_name:    s.player_name,
+          amount:         s.amount,
+          pix_qr_code:    s.pix_qr_code,
           pix_copy_paste: s.pix_copy_paste,
           pix_expires_at: s.pix_expires_at,
-          status:        s.status,
+          status:         s.status,
         })),
       },
     });

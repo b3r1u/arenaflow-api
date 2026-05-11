@@ -63,11 +63,15 @@ function request(method, path, body) {
     const url  = new URL(baseUrl + path);
     const data = body ? JSON.stringify(body) : null;
 
+    // Timeout de 30s por requisição — evita que lentidão do Pagar.me bloqueie a API (L4)
+    const TIMEOUT_MS = 30_000;
+
     const options = {
       hostname: url.hostname,
       port:     443,
       path:     url.pathname + url.search,
       method,
+      timeout:  TIMEOUT_MS,
       headers: {
         'Authorization': getAuthHeader(),
         'Content-Type':  'application/json',
@@ -104,6 +108,9 @@ function request(method, path, body) {
     });
 
     req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy(new Error(`Timeout: Pagar.me não respondeu em ${TIMEOUT_MS / 1000}s`));
+    });
     if (data) req.write(data);
     req.end();
   });

@@ -1,5 +1,6 @@
 const prisma                              = require('../lib/prisma');
 const { sendBookingConfirmationEmail }    = require('../lib/resend.service');
+const { auditLog }                        = require('../lib/audit.service');
 
 /** Busca o email do cliente pelo Firebase UID e dispara o email de confirmação */
 async function notifyBookingPaid(booking, courtIncluded) {
@@ -124,6 +125,9 @@ async function pagarmeWebhook(req, res) {
               updated_at:     new Date(),
             },
           });
+          auditLog('booking.paid', 'webhook', booking.id, {
+            charge_id: chargeId, new_status: newStatus, paid_amount: newPaidAmount,
+          });
           console.log(`[WEBHOOK] charge.paid → booking ${booking.id} (payment_option=${booking.payment_option}, era ${booking.payment_status}) → ${newStatus} | paid=R$${newPaidAmount}`);
           if (newStatus === 'PAGO') await notifyBookingPaid(booking, null);
           return;
@@ -139,46 +143,45 @@ async function pagarmeWebhook(req, res) {
         return;
       }
 
-      // 1. Atualiza a cota para PAGO
-      await prisma.bookingPaymentSplit.update({
-        where: { id: split.id },
-        data:  { status: 'PAGO', updated_at: new Date() },
-      });
+      // ── Atualiza split + grupo + booking numa única transação (L1) ───────────
+      const group   = split.group;
+      const booking = group.booking;
+      const newPaid = group.paid_amount + split.amount;
+      const groupPago = newPaid >= group.total_amount;
+      const halfPago  = newPaid >= group.total_amount * 0.5;
 
-      // 2. Recalcula paid_amount do grupo
-      const group      = split.group;
-      const newPaid    = group.paid_amount + split.amount;
-      const groupPago  = newPaid >= group.total_amount;
-      const halfPago   = newPaid >= group.total_amount * 0.5;
+      const bookingStatus = group.payment_type === 'SPLIT'
+        ? (groupPago ? 'PAGO' : halfPago ? 'PARCIAL' : 'PENDENTE')
+        : 'SINAL_PAGO';
 
-      await prisma.bookingPaymentGroup.update({
-        where: { id: group.id },
-        data: {
-          paid_amount: newPaid,
-          status:      groupPago ? 'PAGO' : halfPago ? 'PARCIAL' : 'PENDENTE',
-          updated_at:  new Date(),
-        },
-      });
+      await prisma.$transaction([
+        prisma.bookingPaymentSplit.update({
+          where: { id: split.id },
+          data:  { status: 'PAGO', updated_at: new Date() },
+        }),
+        prisma.bookingPaymentGroup.update({
+          where: { id: group.id },
+          data: {
+            paid_amount: newPaid,
+            status:      groupPago ? 'PAGO' : halfPago ? 'PARCIAL' : 'PENDENTE',
+            updated_at:  new Date(),
+          },
+        }),
+        prisma.booking.update({
+          where: { id: booking.id },
+          data: {
+            payment_status: bookingStatus,
+            paid_amount:    newPaid / 100, // centavos → reais
+            updated_at:     new Date(),
+          },
+        }),
+      ]);
 
-      // 3. Atualiza status da reserva
-      const booking     = group.booking;
-      let bookingStatus = booking.payment_status;
-
-      if (group.payment_type === 'SPLIT') {
-        // < 50% → PENDENTE | >= 50% → PARCIAL (quadra confirmada) | 100% → PAGO
-        bookingStatus = groupPago ? 'PAGO' : halfPago ? 'PARCIAL' : 'PENDENTE';
-      } else {
-        // DEPOSIT — sinal pago
-        bookingStatus = 'SINAL_PAGO';
-      }
-
-      await prisma.booking.update({
-        where: { id: booking.id },
-        data: {
-          payment_status: bookingStatus,
-          paid_amount:    newPaid / 100, // converte centavos → reais
-          updated_at:     new Date(),
-        },
+      auditLog('split.paid', 'webhook', split.id, {
+        booking_id:     booking.id,
+        player:         split.player_name,
+        amount_cents:   split.amount,
+        booking_status: bookingStatus,
       });
 
       console.log(`[WEBHOOK] Split ${split.id} (${split.player_name}) → PAGO | Reserva ${booking.id} → ${bookingStatus}`);
