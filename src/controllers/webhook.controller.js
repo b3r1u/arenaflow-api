@@ -129,7 +129,7 @@ async function pagarmeWebhook(req, res) {
             charge_id: chargeId, new_status: newStatus, paid_amount: newPaidAmount,
           });
           console.log(`[WEBHOOK] charge.paid → booking ${booking.id} (payment_option=${booking.payment_option}, era ${booking.payment_status}) → ${newStatus} | paid=R$${newPaidAmount}`);
-          if (newStatus === 'PAGO') await notifyBookingPaid(booking, null);
+          if (newStatus === 'PAGO') notifyBookingPaid(booking, null).catch(e => console.error('[WEBHOOK] email falhou:', e.message));
           return;
         }
 
@@ -186,8 +186,9 @@ async function pagarmeWebhook(req, res) {
 
       console.log(`[WEBHOOK] Split ${split.id} (${split.player_name}) → PAGO | Reserva ${booking.id} → ${bookingStatus}`);
       if (bookingStatus === 'PAGO') {
-        const court = await prisma.court.findUnique({ where: { id: booking.court_id }, include: { establishment: true } });
-        await notifyBookingPaid(booking, court);
+        prisma.court.findUnique({ where: { id: booking.court_id }, include: { establishment: true } })
+          .then(court => notifyBookingPaid(booking, court))
+          .catch(e => console.error('[WEBHOOK] email split falhou:', e.message));
       }
       return;
     }
@@ -227,7 +228,7 @@ async function pagarmeWebhook(req, res) {
       });
 
       console.log(`[WEBHOOK] order.paid → booking ${booking.id} (${booking.payment_option}%) → ${newStatus}`);
-      if (newStatus === 'PAGO') await notifyBookingPaid(booking, null);
+      if (newStatus === 'PAGO') notifyBookingPaid(booking, null).catch(e => console.error('[WEBHOOK] email falhou:', e.message));
       return;
     }
 

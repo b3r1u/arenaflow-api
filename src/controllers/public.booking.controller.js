@@ -1,6 +1,17 @@
 const prisma = require('../lib/prisma');
 
 /**
+ * Mascara nome do jogador para conformidade LGPD no endpoint público (A1).
+ * "João Silva" → "João S." | "João" → "João"
+ */
+function maskPlayerName(name) {
+  if (!name) return 'Jogador';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[parts.length - 1].charAt(0)}.`;
+}
+
+/**
  * GET /api/reserva/:id
  * Endpoint público — qualquer pessoa com o link pode visualizar.
  * Retorna dados da reserva + grupo de pagamento + splits (sem dados sensíveis).
@@ -21,7 +32,7 @@ async function getPublicBooking(req, res) {
               orderBy: { created_at: 'asc' },
               select: {
                 id:             true,
-                player_name:    true,
+                player_name:    true, // mascarado antes de retornar (LGPD)
                 amount:         true,
                 pix_qr_code:    true,
                 pix_copy_paste: true,
@@ -61,7 +72,10 @@ async function getPublicBooking(req, res) {
           total_amount: booking.payment_group.total_amount,
           paid_amount:  booking.payment_group.paid_amount,
           status:       booking.payment_group.status,
-          splits:       booking.payment_group.splits,
+          splits: booking.payment_group.splits.map(s => ({
+            ...s,
+            player_name: maskPlayerName(s.player_name),
+          })),
         } : null,
       },
     });

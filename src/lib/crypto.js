@@ -21,15 +21,27 @@ function encrypt(text) {
 }
 
 function decrypt(stored) {
+  // Valor ausente/nulo: retorno vazio legítimo (campo ainda não preenchido)
   if (!stored) return '';
+
   const key = getKey();
   const [ivHex, tagHex, enc] = stored.split(':');
-  if (!ivHex || !tagHex || !enc) return '';
-  const decipher = crypto.createDecipheriv(ALGORITHM, key, Buffer.from(ivHex, 'hex'));
-  decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
-  let dec = decipher.update(enc, 'hex', 'utf8');
-  dec += decipher.final('utf8');
-  return dec;
+
+  // Formato inválido indica corrupção de dados — falha explícita em vez de silenciosa (M1)
+  if (!ivHex || !tagHex || !enc) {
+    throw new Error('Dado criptografado com formato inválido — possível corrupção de dados');
+  }
+
+  try {
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, Buffer.from(ivHex, 'hex'));
+    decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
+    let dec = decipher.update(enc, 'hex', 'utf8');
+    dec += decipher.final('utf8');
+    return dec;
+  } catch (err) {
+    // Falha na autenticação GCM indica dado adulterado ou chave trocada
+    throw new Error(`Falha ao decriptografar: ${err.message}`);
+  }
 }
 
 function maskDocument(doc) {

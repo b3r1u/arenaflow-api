@@ -80,10 +80,13 @@ async function create(req, res) {
     return res.status(400).json({ error: 'Não é possível reservar uma data no passado' });
   }
 
-  // Horário inválido: end <= start
+  // Horário inválido: fora do range [0–23] ou end <= start
   const startH = parseInt(start_hour, 10);
   const endH   = parseInt(end_hour,   10);
-  if (isNaN(startH) || isNaN(endH) || endH <= startH) {
+  if (isNaN(startH) || isNaN(endH) || startH < 0 || startH > 23 || endH < 0 || endH > 23) {
+    return res.status(400).json({ error: 'Horários devem estar entre 0 e 23' });
+  }
+  if (endH <= startH) {
     return res.status(400).json({ error: 'Horário de término deve ser posterior ao de início' });
   }
 

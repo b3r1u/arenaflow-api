@@ -1,6 +1,7 @@
 const prisma                                         = require('../lib/prisma');
 const { encrypt, decrypt, maskDocument, maskPixKey } = require('../lib/crypto');
 const { createRecipient, getRecipient, updateRecipientTransferSettings } = require('../lib/pagarme.service');
+const { auditLog } = require('../lib/audit.service');
 
 function toPublic(f) {
   return {
@@ -95,6 +96,12 @@ async function saveFinancial(req, res, next) {
       create: { establishment_id: est.id, ...payload },
     });
 
+    auditLog('financial.updated', req.user?.firebase_uid || 'unknown', est.id, {
+      document_type,
+      pix_key_type,
+      action: 'save_financial',
+    });
+
     res.json({ financial: toPublic(financial) });
   } catch (err) { next(err); }
 }
@@ -157,6 +164,12 @@ async function saveBankAccount(req, res, next) {
         bank_account:         account,
         bank_account_digit:   account_digit,
       },
+    });
+
+    auditLog('financial.bank_account_updated', req.user?.firebase_uid || 'unknown', est.id, {
+      bank_code,
+      account_type,
+      pagarme_recipient_id: recipientId,
     });
 
     res.json({ financial: toPublic(updated) });
