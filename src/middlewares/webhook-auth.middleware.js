@@ -1,78 +1,79 @@
-const crypto = require('crypto');
-
 /**
- * Middleware de autenticação de webhooks do Pagar.me via HMAC-SHA256.
+ * Middleware de autenticação de webhooks do Pagar.me via HTTP Basic Auth.
  *
- * O Pagar.me V5 assina cada requisição de webhook com o segredo configurado
- * no dashboard e envia a assinatura no header `x-hub-signature`:
- *   x-hub-signature: sha256=<hmac-sha256-hex>
+ * O Pagar.me V5 envia as credenciais configuradas no dashboard em cada requisição:
+ *   Authorization: Basic <base64(usuario:senha)>
  *
- * IMPORTANTE: req.rawBody deve estar disponível (configurado em app.js via
- * `verify` callback do express.json).
+ * Variáveis de ambiente necessárias:
+ *   PAGARME_WEBHOOK_USER  — usuário configurado no dashboard Pagar.me → Webhooks → Autenticação
+ *   PAGARME_WEBHOOK_PASS  — senha configurada no dashboard Pagar.me → Webhooks → Autenticação
  *
- * Variável de ambiente necessária:
- *   PAGARME_WEBHOOK_SECRET — obter em: Pagar.me Dashboard → Configurações → Webhooks
- *
- * Em desenvolvimento sem a variável configurada, a validação é ignorada com aviso.
- * Em produção (NODE_ENV=production) sem a variável, a requisição é recusada com 503.
+ * Em desenvolvimento sem as variáveis configuradas: aviso + bypass.
+ * Em produção (NODE_ENV=production) sem as variáveis: bloqueia com 503.
  */
 function validateWebhookSignature(req, res, next) {
-  const secret = process.env.PAGARME_WEBHOOK_SECRET;
+  const expectedUser = process.env.PAGARME_WEBHOOK_USER;
+  const expectedPass = process.env.PAGARME_WEBHOOK_PASS;
 
-  // Sem secret configurado: bloqueia em produção, avisa em dev
-  if (!secret) {
+  // Sem credenciais configuradas: bloqueia em produção, avisa em dev
+  if (!expectedUser || !expectedPass) {
     if (process.env.NODE_ENV === 'production') {
-      console.error('[WEBHOOK-AUTH] PAGARME_WEBHOOK_SECRET não configurado — requisição recusada');
+      console.error('[WEBHOOK-AUTH] PAGARME_WEBHOOK_USER/PASS não configurados — requisição recusada');
       return res.status(503).json({ error: 'Webhook não configurado' });
     }
-    console.warn('[WEBHOOK-AUTH] PAGARME_WEBHOOK_SECRET ausente — validação de assinatura desabilitada (dev)');
+    console.warn('[WEBHOOK-AUTH] Credenciais de webhook ausentes — autenticação desabilitada (dev)');
     return next();
   }
 
-  const signatureHeader = req.headers['x-hub-signature'];
+  const authHeader = req.headers['authorization'];
 
-  if (!signatureHeader) {
-    console.warn('[WEBHOOK-AUTH] Header x-hub-signature ausente');
-    return res.status(401).json({ error: 'Assinatura de webhook ausente' });
+  if (!authHeader || !authHeader.startsWith('Basic ')) {
+    console.warn('[WEBHOOK-AUTH] Header Authorization ausente ou não-Basic');
+    return res.status(401).json({ error: 'Autenticação de webhook ausente' });
   }
 
-  // Extrai o hash (formato: "sha256=<hex>")
-  const [algo, receivedHex] = signatureHeader.split('=');
-  if (algo !== 'sha256' || !receivedHex) {
-    console.warn('[WEBHOOK-AUTH] Formato de assinatura inválido:', signatureHeader);
-    return res.status(401).json({ error: 'Formato de assinatura inválido' });
+  // Decodifica "Basic <base64>"
+  let decoded;
+  try {
+    decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf8');
+  } catch {
+    return res.status(401).json({ error: 'Autenticação de webhook inválida' });
   }
 
-  // Body cru necessário para verificação correta do HMAC
-  const rawBody = req.rawBody;
-  if (!rawBody) {
-    console.error('[WEBHOOK-AUTH] req.rawBody indisponível — verifique configuração do express.json em app.js');
-    return res.status(500).json({ error: 'Configuração de servidor incorreta' });
+  const colonIdx = decoded.indexOf(':');
+  if (colonIdx === -1) {
+    return res.status(401).json({ error: 'Autenticação de webhook inválida' });
   }
 
-  // Calcula o HMAC esperado usando timingSafeEqual para evitar timing attacks
-  const expectedHmac = crypto
-    .createHmac('sha256', secret)
-    .update(rawBody)
-    .digest('hex');
+  const receivedUser = decoded.slice(0, colonIdx);
+  const receivedPass = decoded.slice(colonIdx + 1);
 
-  const receivedBuf = Buffer.from(receivedHex, 'hex');
-  const expectedBuf = Buffer.from(expectedHmac, 'hex');
+  // Comparação segura contra timing attacks
+  const crypto = require('crypto');
 
-  // Buffers de tamanho diferente indicam adulteração — recusa antes do compare
-  if (receivedBuf.length !== expectedBuf.length) {
-    console.warn('[WEBHOOK-AUTH] Assinatura de webhook inválida (tamanho diferente)');
-    return res.status(401).json({ error: 'Assinatura de webhook inválida' });
-  }
+  const userMatch = safeCompare(receivedUser, expectedUser);
+  const passMatch = safeCompare(receivedPass, expectedPass);
 
-  const isValid = crypto.timingSafeEqual(receivedBuf, expectedBuf);
-
-  if (!isValid) {
-    console.warn('[WEBHOOK-AUTH] Assinatura de webhook inválida (hash não confere)');
-    return res.status(401).json({ error: 'Assinatura de webhook inválida' });
+  if (!userMatch || !passMatch) {
+    console.warn('[WEBHOOK-AUTH] Credenciais de webhook inválidas');
+    return res.status(401).json({ error: 'Autenticação de webhook inválida' });
   }
 
   next();
+}
+
+/** Compara duas strings de forma segura contra timing attacks */
+function safeCompare(a, b) {
+  const crypto = require('crypto');
+  // Garante tamanho igual antes do timingSafeEqual
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) {
+    // Faz a comparação mesmo assim para não vazar timing, mas retorna false
+    crypto.timingSafeEqual(Buffer.alloc(bufA.length), Buffer.alloc(bufA.length));
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
 }
 
 module.exports = { validateWebhookSignature };

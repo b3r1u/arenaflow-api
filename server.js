@@ -33,9 +33,9 @@ try {
     process.exit(1);
   }
 
-  // Aviso se webhook secret não configurado
-  if (!process.env.PAGARME_WEBHOOK_SECRET) {
-    console.warn('[WARN] PAGARME_WEBHOOK_SECRET não configurado — autenticação de webhook desabilitada');
+  // Aviso se credenciais de webhook não configuradas
+  if (!process.env.PAGARME_WEBHOOK_USER || !process.env.PAGARME_WEBHOOK_PASS) {
+    console.warn('[WARN] PAGARME_WEBHOOK_USER/PASS não configurados — autenticação de webhook desabilitada');
   }
 
   const app  = require('./src/app');
