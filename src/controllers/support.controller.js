@@ -13,19 +13,25 @@ async function sendMessage(req, res, next) {
       return res.status(400).json({ error: 'Mensagem muito longa (máx. 2000 caracteres).' });
     }
 
-    // Busca o nome do estabelecimento (gestores) ou usa o nome do jogador (booking)
-    const establishment = await prisma.establishment.findUnique({
-      where:  { owner_id: req.user.id },
-      select: { name: true },
-    });
+    // Busca estabelecimento (gestores) e dados completos do usuário (booking)
+    const [establishment, userRow] = await Promise.all([
+      prisma.establishment.findUnique({
+        where:  { owner_id: req.user.id },
+        select: { name: true },
+      }),
+      prisma.user.findUnique({
+        where:  { id: req.user.id },
+        select: { name: true, phone: true },
+      }),
+    ]);
 
-    const establishmentName = establishment?.name
-      ? `${establishment.name} (gestor)`
-      : `${req.user.name || 'Jogador'} (booking)`;
     const senderEmail = req.user.email || 'email não informado';
+    const isBooking   = !establishment;
 
     await sendSupportEmail({
-      establishmentName,
+      establishmentName: establishment?.name || null,
+      clientName:        isBooking ? (userRow?.name  || 'Cliente') : null,
+      clientPhone:       isBooking ? (userRow?.phone || null)      : null,
       senderEmail,
       message: message.trim(),
     });

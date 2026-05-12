@@ -5,13 +5,35 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 /**
  * Envia email de suporte para a equipe ArenaFlow/Solve.
  * @param {object} opts
- * @param {string} opts.establishmentName - Nome do estabelecimento
- * @param {string} opts.senderEmail       - Email do usuário logado
- * @param {string} opts.message           - Mensagem do usuário
+ * @param {string|null} opts.establishmentName - Nome do estabelecimento (gestores)
+ * @param {string|null} opts.clientName        - Nome do cliente (booking)
+ * @param {string|null} opts.clientPhone       - Telefone/WhatsApp do cliente (booking)
+ * @param {string}      opts.senderEmail       - Email do remetente
+ * @param {string}      opts.message           - Mensagem
  */
-async function sendSupportEmail({ establishmentName, senderEmail, message }) {
-  const to   = process.env.SUPPORT_EMAIL || 'connectsolve.ti@gmail.com';
-  const from = 'Suporte ArenaFlow <noreply@arenaflow.site>';
+async function sendSupportEmail({ establishmentName, clientName, clientPhone, senderEmail, message }) {
+  const to      = process.env.SUPPORT_EMAIL || 'connectsolve.ti@gmail.com';
+  const from    = 'Suporte ArenaFlow <noreply@arenaflow.site>';
+  const isAdmin = !!establishmentName;
+
+  const senderBlock = isAdmin
+    ? `
+        <div style="background:white;border-radius:8px;padding:16px 20px;margin-bottom:16px;border:1px solid #e5e7eb">
+          <p style="margin:0 0 4px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280">Estabelecimento</p>
+          <p style="margin:0;font-size:16px;font-weight:700;color:#111827">${establishmentName}</p>
+          <p style="margin:4px 0 0;font-size:12px;color:#6b7280">${senderEmail}</p>
+        </div>`
+    : `
+        <div style="background:white;border-radius:8px;padding:16px 20px;margin-bottom:16px;border:1px solid #e5e7eb">
+          <p style="margin:0 0 4px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280">Chamado app booking</p>
+          <p style="margin:0;font-size:16px;font-weight:700;color:#111827">${clientName || 'Cliente'}</p>
+          <p style="margin:4px 0 0;font-size:12px;color:#6b7280">${senderEmail}</p>
+          ${clientPhone ? `<p style="margin:4px 0 0;font-size:12px;color:#6b7280">📱 WhatsApp: ${clientPhone}</p>` : ''}
+        </div>`;
+
+  const subject = isAdmin
+    ? `[Suporte Admin] ${establishmentName}`
+    : `[Suporte Booking] ${clientName || senderEmail}`;
 
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#f9fafb;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb">
@@ -19,18 +41,13 @@ async function sendSupportEmail({ establishmentName, senderEmail, message }) {
       <!-- Header -->
       <div style="background:linear-gradient(135deg,#16a34a,#15803d);padding:24px 28px">
         <h1 style="margin:0;color:white;font-size:18px;font-weight:700">📬 Novo chamado de suporte</h1>
-        <p style="margin:4px 0 0;color:rgba(255,255,255,0.8);font-size:13px">ArenaFlow — Painel Admin</p>
+        <p style="margin:4px 0 0;color:rgba(255,255,255,0.8);font-size:13px">ArenaFlow — ${isAdmin ? 'Painel Admin' : 'App Booking'}</p>
       </div>
 
       <!-- Body -->
       <div style="padding:28px">
 
-        <!-- Estabelecimento -->
-        <div style="background:white;border-radius:8px;padding:16px 20px;margin-bottom:16px;border:1px solid #e5e7eb">
-          <p style="margin:0 0 4px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280">Estabelecimento</p>
-          <p style="margin:0;font-size:16px;font-weight:700;color:#111827">${establishmentName}</p>
-          <p style="margin:4px 0 0;font-size:12px;color:#6b7280">${senderEmail}</p>
-        </div>
+        ${senderBlock}
 
         <!-- Mensagem -->
         <div style="background:white;border-radius:8px;padding:16px 20px;border:1px solid #e5e7eb">
@@ -48,12 +65,7 @@ async function sendSupportEmail({ establishmentName, senderEmail, message }) {
     </div>
   `;
 
-  return resend.emails.send({
-    from,
-    to,
-    subject: `[Suporte] ${establishmentName}`,
-    html,
-  });
+  return resend.emails.send({ from, to, subject, html });
 }
 
 /**
