@@ -28,6 +28,8 @@ async function sendMessage(req, res, next) {
 
     const senderEmail = req.user.email || 'email não informado';
 
+    console.log('[SUPPORT DEBUG]', { isBooking, source, establishmentName: establishment?.name, clientName: userRow?.name, clientPhone: userRow?.phone });
+
     await sendSupportEmail({
       establishmentName: isBooking ? null : (establishment?.name || 'Estabelecimento sem nome'),
       clientName:        isBooking ? (userRow?.name  || 'Cliente') : null,
