@@ -19,4 +19,7 @@ router.put('/:id',                 ctrl.update);
 // POST   /api/platform/plans/:id/sync    — sincroniza com o Pagar.me
 router.post('/:id/sync',           ctrl.syncPagarme);
 
+// GET    /api/platform/plans/:id/subscribers — lista assinantes do plano
+router.get('/:id/subscribers',     ctrl.getSubscribers);
+
 module.exports = router;

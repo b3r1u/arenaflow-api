@@ -177,4 +177,38 @@ async function syncPagarme(req, res) {
   }
 }
 
-module.exports = { list, create, update, syncPagarme };
+/**
+ * GET /api/platform/plans/:id/subscribers
+ * Lista os assinantes de um plano específico.
+ */
+async function getSubscribers(req, res) {
+  const { id } = req.params;
+
+  try {
+    const subscriptions = await prisma.subscription.findMany({
+      where:   { plan_id: id },
+      orderBy: { created_at: 'desc' },
+      include: {
+        user: {
+          select: {
+            name:  true,
+            email: true,
+            establishment: {
+              select: {
+                name: true,
+                _count: { select: { courts: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return res.json({ subscriptions });
+  } catch (err) {
+    console.error('[PLATFORM/PLANS/SUBSCRIBERS]', err.message);
+    return res.status(500).json({ error: 'Erro ao buscar assinantes' });
+  }
+}
+
+module.exports = { list, create, update, syncPagarme, getSubscribers };
